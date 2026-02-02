@@ -60,7 +60,7 @@ body:
     attributes:
       label: Tools Version
       description: What version tools are you running?
-      placeholder: 	9.2.9.3
+      placeholder: 9.2.9.3
     validations:
       required: true
   
@@ -69,7 +69,7 @@ body:
     attributes:
       label: Windows Version
       description: What version of windows are you using?
-      placeholder: 	Windows 11 24H2
+      placeholder: Windows 11 24H2
     validations:
       required: true
       
