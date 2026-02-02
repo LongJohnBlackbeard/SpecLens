@@ -1,0 +1,613 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SpecLens.Avalonia.ViewModels"
+        xmlns:views="using:SpecLens.Avalonia.Views"
+        xmlns:converters="using:SpecLens.Avalonia.Converters"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="700"
+        x:Class="SpecLens.Avalonia.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="{Binding Title}"
+        Width="1100" Height="700"
+        Background="{DynamicResource AppWindowBackgroundBrush}"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="48"
+        SystemDecorations="None"
+        CanResize="True">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Window.Resources>
+        <converters:BooleanToBrushConverter x:Key="TabBackgroundConverter"
+                                            TrueBrush="{StaticResource AppTabSelectedBackgroundBrush}"
+                                            FalseBrush="{StaticResource AppTabUnselectedBackgroundBrush}" />
+        <converters:BooleanToBrushConverter x:Key="TabAccentConverter"
+                                            TrueBrush="{StaticResource AppTabAccentBrush}"
+                                            FalseBrush="Transparent" />
+        <converters:BooleanToBrushConverter x:Key="TabBorderConverter"
+                                            TrueBrush="{StaticResource AppTabAccentBrush}"
+                                            FalseBrush="{StaticResource AppBorderStrongBrush}" />
+        <converters:BooleanNotConverter x:Key="BooleanNotConverter" />
+    </Window.Resources>
+
+    <Window.Styles>
+        <Style Selector="Button.window-control">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource AppHeaderForegroundBrush}" />
+        </Style>
+        <Style Selector="Button.window-control:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AppTitleBarButtonHoverBrush}" />
+        </Style>
+        <Style Selector="Button.window-control:pressed">
+            <Setter Property="Background" Value="{DynamicResource AppHeaderButtonBorderBrush}" />
+        </Style>
+    </Window.Styles>
+
+    <Grid>
+        <Grid RowDefinitions="Auto,*">
+            <!-- Header -->
+            <Border Grid.Row="0" Background="{DynamicResource AppHeaderBackgroundBrush}">
+                <Grid ColumnDefinitions="*,Auto" Height="48">
+                    <Border Grid.Column="0"
+                            Padding="16,10"
+                            Background="Transparent"
+                            PointerPressed="OnTitleBarPointerPressed"
+                            DoubleTapped="OnTitleBarDoubleTapped">
+                        <TextBlock Text="Spec Lens"
+                                   Foreground="{DynamicResource AppHeaderForegroundBrush}"
+                                   FontSize="20"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center" />
+                    </Border>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Margin="0,0,8,0">
+                        <Button Content="Settings"
+                                Click="OnSettingsClick"
+                                Foreground="{DynamicResource AppHeaderForegroundBrush}"
+                                Background="Transparent"
+                                BorderBrush="{DynamicResource AppHeaderButtonBorderBrush}"
+                                Padding="8,4" />
+                        <Button Content="Connect"
+                                Command="{Binding ConnectCommand}"
+                                Foreground="White"
+                                Background="{DynamicResource AppAccentBrush}"
+                                BorderBrush="{DynamicResource AppAccentBorderBrush}"
+                                Padding="12,6"
+                                IsVisible="{Binding !IsConnected}" />
+                        <Button Content="Disconnect"
+                                Command="{Binding DisconnectCommand}"
+                                Foreground="White"
+                                Background="{DynamicResource AppDisconnectBrush}"
+                                BorderBrush="{DynamicResource AppDisconnectBorderBrush}"
+                                Padding="12,6"
+                                IsVisible="{Binding IsConnected}" />
+                        <Border Width="1"
+                                Height="18"
+                                Background="{DynamicResource AppHeaderButtonBorderBrush}"
+                                Margin="6,0,4,0" />
+                        <StackPanel Orientation="Horizontal" Spacing="0">
+                            <Button Classes="window-control" Click="OnMinimizeClick">
+                                <Path Data="M3,10 L13,10"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                      StrokeThickness="1.6"
+                                      StrokeLineCap="Square"
+                                      Width="16"
+                                      Height="12"
+                                      Stretch="Uniform" />
+                            </Button>
+                            <Button Classes="window-control" Click="OnMaximizeClick">
+                                <Path Data="M3,3 L13,3 L13,13 L3,13 Z"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                      StrokeThickness="1.4"
+                                      Width="14"
+                                      Height="14"
+                                      Stretch="Uniform" />
+                            </Button>
+                            <Button Classes="window-control" Click="OnCloseWindowClick">
+                                <Path Data="M3,3 L13,13 M13,3 L3,13"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                      StrokeThickness="1.6"
+                                      StrokeLineCap="Square"
+                                      Width="12"
+                                      Height="12"
+                                      Stretch="Uniform" />
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1" x:Name="MainLayoutGrid">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*" MinWidth="280" />
+                    <ColumnDefinition Width="6" />
+                    <ColumnDefinition Width="3*" />
+
+                </Grid.ColumnDefinitions>
+
+            <!-- Search Panel -->
+            <Border Grid.Column="0" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,1,0" Padding="16">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,6,*">
+                    <StackPanel Grid.Row="0" Spacing="2">
+                        <TextBlock Text="Object Search"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource AppTextPrimaryBrush}" />
+                        <TextBlock Text="{Binding StatusMessage}"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   FontSize="12" />
+                    </StackPanel>
+
+                    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto">
+                        <TextBox Grid.Column="0"
+                                 Margin="0,0,8,0"
+                                 VerticalContentAlignment="Center"
+                                 Watermark="Object name (wildcards *)"
+                                 KeyDown="OnSearchBoxKeyDown"
+                                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" 
+                                 FontSize="10"/>
+
+                        <ComboBox Grid.Column="1"
+                                  Width="120"
+                                  Margin="0,0,8,0"
+                                  VerticalContentAlignment="Center"
+                                  ItemsSource="{Binding ObjectTypeOptions}"
+                                  SelectedItem="{Binding SelectedObjectTypeOption}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </Grid>
+                    
+                    <Grid Grid.Row="2" 
+                        ColumnDefinitions="*,Auto">
+                        <TextBox Grid.Column="0"
+                                 Margin="0,8,0,0"
+                                 VerticalContentAlignment="Center"
+                                 Watermark="Description (wildcards *)"
+                                 KeyDown="OnSearchBoxKeyDown"
+                                 FontSize="10"
+                                 Text="{Binding DescriptionSearchText, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button Grid.Column="1"
+                                Margin="2,8,0,0"
+                                Content="Search"
+                                Command="{Binding SearchCommand}"
+                                Padding="12,6" />
+                    </Grid>
+
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,8,0,0" Spacing="8">
+                        <Button Content="Specs"
+                                Command="{Binding OpenSpecsCommand}"
+                                Padding="12,6" />
+                        <Button Content="Open"
+                                Command="{Binding OpenQueryCommand}"
+                                Padding="12,6" />
+                        <Button Content="Event Rules"
+                                Command="{Binding OpenEventRulesCommand}"
+                                Padding="12,6" />
+                    </StackPanel>
+
+                    <DataGrid Grid.Row="4"
+                              x:Name="ResultsGrid"
+                              Margin="0,12,0,0"
+                              ItemsSource="{Binding ObjectResults}"
+                              SelectedItem="{Binding SelectedObject}"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              PointerPressed="OnResultsGridPointerPressed"
+                              DoubleTapped="OnResultsGridDoubleTapped">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Open Specs" Click="OnOpenSpecsMenuClick" />
+                                <MenuItem Header="Open Query" Click="OnOpenQueryMenuClick" />
+                                <MenuItem Header="Open Event Rules" Click="OnOpenEventRulesMenuClick" />
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Name" Binding="{Binding ObjectName}" Width="120" />
+                            <DataGridTextColumn Header="Type" Binding="{Binding ObjectType}" Width="70" />
+                            <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <GridSplitter Grid.Row="5"
+                                  Height="6"
+                                  Background="{DynamicResource AppSplitterBrush}"
+                                  ResizeDirection="Rows"
+                                  ResizeBehavior="PreviousAndNext"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch" />
+
+                    <Border Grid.Row="6"
+                            Margin="0,12,0,0"
+                            BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="10"
+                            Background="{DynamicResource AppPanelAltBackgroundBrush}">
+                        <Border.Styles>
+                            <Style Selector="TextBlock.dd-label">
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                                <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+                                <Setter Property="VerticalAlignment" Value="Top" />
+                                <Setter Property="Margin" Value="6,3,6,3" />
+                            </Style>
+                            <Style Selector="TextBlock.dd-value">
+                                <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+                                <Setter Property="TextWrapping" Value="WrapWithOverflow" />
+                                <Setter Property="Margin" Value="6,3,6,3" />
+                            </Style>
+                        </Border.Styles>
+                        <Grid RowDefinitions="Auto,Auto,*" RowSpacing="6">
+                            <TextBlock Text="DD Info"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource AppTextPrimaryBrush}" />
+                            <TextBlock Grid.Row="1"
+                                       Text="Select a column to view data dictionary information."
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                       IsVisible="{Binding DataDictionaryInfo.HasSelection, Converter={StaticResource BooleanNotConverter}}" />
+
+                            <ScrollViewer Grid.Row="2"
+                                          IsVisible="{Binding DataDictionaryInfo.HasSelection}"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          AllowAutoHide="False"
+                                          Padding="0,0,10,0">
+                                <Grid ColumnDefinitions="Auto,*"
+                                      RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                                      ColumnSpacing="0"
+                                      RowSpacing="0">
+                                    <Border Grid.Column="0" Grid.Row="0" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="1" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="2" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="3" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="4" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="5" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="6" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="7" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="8" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="9" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="10" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="11" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="12" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="13" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="14" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="15" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="16" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="17" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="18" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="19" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="20" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="21" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="22" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="23" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="24" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="25" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="26" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="27" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.Row="28" Grid.ColumnSpan="2" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" />
+                                    <Border Grid.Column="0" Grid.RowSpan="27" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,1,0" />
+
+                                    <TextBlock Classes="dd-label" Text="Source" Grid.Row="0" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.Source}" Grid.Row="0" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Alias" Grid.Row="1" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.Alias}" Grid.Row="1" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Data Item" Grid.Row="2" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.DataItem}" Grid.Row="2" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Description" Grid.Row="3" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.Description}" Grid.Row="3" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Type" Grid.Row="4" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.TypeCode}" Grid.Row="4" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Size" Grid.Row="5" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.Length}" Grid.Row="5" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Decimals" Grid.Row="6" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.Decimals}" Grid.Row="6" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Display Dec." Grid.Row="7" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.DisplayDecimals}" Grid.Row="7" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Default" Grid.Row="8" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.DefaultValue}" Grid.Row="8" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="System" Grid.Row="9" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.SystemCode}" Grid.Row="9" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Glossary Group" Grid.Row="10" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.GlossaryGroup}" Grid.Row="10" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Next Number System" Grid.Row="11" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.NextNumberSystem}" Grid.Row="11" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Next Number Index" Grid.Row="12" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.NextNumberIndex}" Grid.Row="12" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Display Rule BF" Grid.Row="13" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.DisplayRuleBf}" Grid.Row="13" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Edit Rule BF" Grid.Row="14" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.EditRuleBf}" Grid.Row="14" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Search Form" Grid.Row="15" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.SearchForm}" Grid.Row="15" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Security Flag" Grid.Row="16" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.SecurityFlag}" Grid.Row="16" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Edit Rule" Grid.Row="17" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.EditRule}" Grid.Row="17" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Edit Rule Parm 1" Grid.Row="18" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.EditRuleParm1}" Grid.Row="18" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Edit Rule Parm 2" Grid.Row="19" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.EditRuleParm2}" Grid.Row="19" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Upper Case Only" Grid.Row="20" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.UpperCaseOnly}" Grid.Row="20" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Allow Blank Entry" Grid.Row="21" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.AllowBlankEntry}" Grid.Row="21" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Auto Include" Grid.Row="22" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.AutoInclude}" Grid.Row="22" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Do Not Total" Grid.Row="23" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.DoNotTotal}" Grid.Row="23" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Column Title" Grid.Row="24" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.ColumnTitle}" Grid.Row="24" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Column 2 Title" Grid.Row="25" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.ColumnTitle2}" Grid.Row="25" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Row Description" Grid.Row="26" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.RowDescription}" Grid.Row="26" Grid.Column="1" />
+
+                                    <TextBlock Classes="dd-label" Text="Glossary" Grid.Row="27" Grid.ColumnSpan="2" />
+                                    <TextBlock Classes="dd-value" Text="{Binding DataDictionaryInfo.Glossary}" Grid.Row="28" Grid.ColumnSpan="2" />
+                                </Grid>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <GridSplitter Grid.Column="1"
+                          Width="6"
+                          Background="{DynamicResource AppSplitterBrush}"
+                          ResizeDirection="Columns"
+                          ResizeBehavior="PreviousAndNext"
+                          PointerReleased="OnSearchSplitterPointerReleased"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch" />
+
+            <!-- Tab Workspace -->
+            <Grid Grid.Column="2" Margin="16" RowDefinitions="Auto,*" Background="{DynamicResource AppWindowBackgroundBrush}">
+                <Border 
+                        BorderThickness="0,0,0,0"
+                        Padding="8,6,8,0"
+                        CornerRadius="5">
+                    <ListBox ItemsSource="{Binding Tabs}"
+                             SelectedItem="{Binding SelectedTab, Mode=TwoWay}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                             ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                             Background="Transparent"
+                             BorderThickness="0">
+                        <ListBox.Styles>
+                            <Style Selector="ListBoxItem">
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="Margin" Value="0" />
+                                <Setter Property="Background" Value="Transparent" />
+                                <Setter Property="BorderThickness" Value="0" />
+                                <Setter Property="BorderBrush" Value="Transparent" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                            </Style>
+                            <Style Selector="ListBoxItem:pointerover">
+                                <Setter Property="Background" Value="Transparent" />
+                                <Setter Property="BorderBrush" Value="Transparent" />
+                                <Setter Property="BorderThickness" Value="0" />
+                            </Style>
+                            <Style Selector="ListBoxItem:selected">
+                                <Setter Property="Background" Value="Transparent" />
+                                <Setter Property="BorderBrush" Value="Transparent" />
+                                <Setter Property="BorderThickness" Value="0" />
+                            </Style>
+                        </ListBox.Styles>
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="6" />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:WorkspaceTabViewModel">
+                                <Border Margin="0"
+                                        Background="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Converter={StaticResource TabBackgroundConverter}}"
+                                        BorderBrush="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Converter={StaticResource TabBorderConverter}}"
+                                        BorderThickness="0,0,0,0"
+                                        CornerRadius="6,6,6,6"
+                                        BoxShadow="{DynamicResource AppTabShadow}">
+                                    <Border.ContextMenu>
+                                        <ContextMenu x:CompileBindings="False"
+                                                     DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                            <MenuItem Header="Close"
+                                                      Click="OnCloseTabMenuClick" />
+                                            <MenuItem Header="Close All"
+                                                      Click="OnCloseAllTabsMenuClick" />
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
+                                    <Grid RowDefinitions="3,*">
+                                        <Border Background="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Converter={StaticResource TabAccentConverter}}"
+                                                CornerRadius="6,6,0,0" />
+                                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="10,6">
+                                            <TextBlock Text="{Binding Header}" VerticalAlignment="Center" />
+                                            <Button x:CompileBindings="False"
+                                                    Content="x"
+                                                    Command="{Binding DataContext.CloseTabCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}"
+                                                    FontSize="16"
+                                                    Padding="4,0"
+                                                    Background="Transparent"
+                                                    BorderThickness="0" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+
+                <Border Grid.Row="1"
+                        BorderBrush="{DynamicResource AppBorderStrongBrush}"
+                        BorderThickness="0,0,0,0"
+                        CornerRadius="0,0,6,6"
+                        Background="{DynamicResource AppWindowBackgroundBrush}">
+                    <ItemsControl ItemsSource="{Binding Tabs}">
+                        <ItemsControl.ItemContainerTheme>
+                            <ControlTheme TargetType="ContentPresenter" x:CompileBindings="False">
+                                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                <Setter Property="VerticalAlignment" Value="Stretch" />
+                                <Setter Property="IsVisible" Value="{Binding IsActive}" />
+                                <Setter Property="IsHitTestVisible" Value="{Binding IsActive}" />
+                            </ControlTheme>
+                        </ItemsControl.ItemContainerTheme>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Grid />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.DataTemplates>
+                            <DataTemplate DataType="vm:QueryTabViewModel">
+                                <views:QueryTabView />
+                            </DataTemplate>
+                            <DataTemplate DataType="vm:SpecsTabViewModel">
+                                <views:SpecsTabView />
+                            </DataTemplate>
+                            <DataTemplate DataType="vm:EventRulesTabViewModel">
+                                <views:EventRulesTabView />
+                            </DataTemplate>
+                            <DataTemplate DataType="vm:PlaceholderTabViewModel">
+                                <Grid>
+                                    <StackPanel HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                Spacing="8">
+                                        <TextBlock Text="{Binding Header}"
+                                                   FontSize="20"
+                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                   HorizontalAlignment="Center" />
+                                        <TextBlock Text="Placeholder tab"
+                                                   FontSize="14"
+                                                   Foreground="{DynamicResource AppTextMutedBrush}"
+                                                   HorizontalAlignment="Center" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.DataTemplates>
+                    </ItemsControl>
+                </Border>
+
+                <!-- Empty state when no tabs -->
+                <Grid Grid.RowSpan="2" IsVisible="{Binding !Tabs.Count}">
+                    <TextBlock Text="Search for an object, then open Specs or Query."
+                               IsVisible="{Binding IsConnected}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               FontSize="16"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}" />
+
+                    <TextBlock Text="Click Connect to start..."
+                               IsVisible="{Binding !IsConnected}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               FontSize="16"
+                               Foreground="{DynamicResource AppTextMutedBrush}" />
+                </Grid>
+            </Grid>
+
+            <!-- Locked overlay -->
+            <Border Grid.ColumnSpan="3"
+                    Background="{DynamicResource AppOverlayBrush}"
+                    IsVisible="{Binding IsLocked}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                    <TextBlock Text="JDE connection required"
+                               Foreground="White"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="{Binding StatusMessage}"
+                               Foreground="{DynamicResource AppOverlayTextBrush}"
+                               HorizontalAlignment="Center" />
+                    <Button Content="Reconnect"
+                            Command="{Binding ConnectCommand}"
+                            Padding="16,8" />
+                </StackPanel>
+            </Border>
+            </Grid>
+        </Grid>
+
+        <Grid RowDefinitions="6,*,6"
+              ColumnDefinitions="6,*,6"
+              Panel.ZIndex="10">
+            <Border Grid.Row="0" Grid.Column="0"
+                    Background="Transparent"
+                    x:Name="ResizeNorthWest"
+                    Tag="NorthWest"
+                    PointerPressed="OnResizePointerPressed" />
+            <Border Grid.Row="0" Grid.Column="1"
+                    Background="Transparent"
+                    x:Name="ResizeNorth"
+                    Tag="North"
+                    PointerPressed="OnResizePointerPressed" />
+            <Border Grid.Row="0" Grid.Column="2"
+                    Background="Transparent"
+                    x:Name="ResizeNorthEast"
+                    Tag="NorthEast"
+                    PointerPressed="OnResizePointerPressed" />
+            <Border Grid.Row="1" Grid.Column="0"
+                    Background="Transparent"
+                    x:Name="ResizeWest"
+                    Tag="West"
+                    PointerPressed="OnResizePointerPressed" />
+            <Border Grid.Row="1" Grid.Column="2"
+                    Background="Transparent"
+                    x:Name="ResizeEast"
+                    Tag="East"
+                    PointerPressed="OnResizePointerPressed" />
+            <Border Grid.Row="2" Grid.Column="0"
+                    Background="Transparent"
+                    x:Name="ResizeSouthWest"
+                    Tag="SouthWest"
+                    PointerPressed="OnResizePointerPressed" />
+            <Border Grid.Row="2" Grid.Column="1"
+                    Background="Transparent"
+                    x:Name="ResizeSouth"
+                    Tag="South"
+                    PointerPressed="OnResizePointerPressed" />
+            <Border Grid.Row="2" Grid.Column="2"
+                    Background="Transparent"
+                    x:Name="ResizeSouthEast"
+                    Tag="SouthEast"
+                    PointerPressed="OnResizePointerPressed" />
+        </Grid>
+    </Grid>
+</Window>

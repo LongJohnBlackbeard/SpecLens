@@ -1,0 +1,23 @@
+<Project>
+    <PropertyGroup>
+        <Authors>Daniel Tujo</Authors>
+        <Product>Spec Lens</Product>
+        <Copyright>Copyright © 2026</Copyright>
+        <Version>0.0.1</Version>
+        <FileVersion>1.0.0.0</FileVersion>
+        <AssemblyVersion>1.0.0.0</AssemblyVersion>
+        <NeutralLanguage>en-US</NeutralLanguage>
+        <PlatformTarget>x64</PlatformTarget>
+        <Prefer32Bit>false</Prefer32Bit>
+
+        <!-- Code Quality -->
+        <Deterministic>true</Deterministic>
+        <Features>strict</Features>
+        <CheckForOverflowUnderflow>false</CheckForOverflowUnderflow>
+    </PropertyGroup>
+
+    <!-- Central Package Version Management -->
+    <ItemGroup>
+        <InternalsVisibleTo Include="$(AssemblyName).Tests" />
+    </ItemGroup>
+</Project>

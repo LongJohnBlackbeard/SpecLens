@@ -1,0 +1,69 @@
+<reactiveui:ReactiveUserControl xmlns="https://github.com/avaloniaui"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                xmlns:vm="using:SpecLens.Avalonia.ViewModels"
+                                xmlns:models="using:JdeClient.Core.Models"
+                                xmlns:AvaloniaEdit="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
+                                xmlns:reactiveui="using:Avalonia.ReactiveUI"
+                                x:Class="SpecLens.Avalonia.Views.EventRulesTabView"
+                                x:DataType="vm:EventRulesTabViewModel"
+                                x:TypeArguments="vm:EventRulesTabViewModel">
+    <Grid ColumnDefinitions="260,6,*">
+        <Border Grid.Column="0"
+                BorderBrush="{DynamicResource AppBorderBrush}"
+                BorderThickness="0,0,1,0"
+                Padding="8">
+            <TreeView x:Name="EventRulesTree"
+                      ItemsSource="{Binding Nodes}"
+                      SelectedItem="{Binding SelectedNode}"
+                      FontSize="10">
+                <TreeView.Styles>
+                    <Style Selector="TreeViewItem" x:CompileBindings="False">
+                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                    </Style>
+                </TreeView.Styles>
+                <TreeView.ItemTemplate>
+                    <TreeDataTemplate DataType="models:JdeEventRulesNode"
+                                      x:DataType="models:JdeEventRulesNode"
+                                      ItemsSource="{Binding Children}">
+                        <TextBlock Text="{Binding Name}" />
+                    </TreeDataTemplate>
+                </TreeView.ItemTemplate>
+            </TreeView>
+        </Border>
+
+        <GridSplitter Grid.Column="1"
+                      Background="{DynamicResource AppSplitterBrush}"
+                      ResizeDirection="Columns"
+                      ResizeBehavior="PreviousAndNext" />
+
+        <Grid Grid.Column="2" RowDefinitions="Auto,*">
+            <StackPanel Margin="12,10,12,6" Spacing="3">
+                <TextBlock Text="{Binding DocumentTitle}"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource AppTextPrimaryBrush}" />
+                <TextBlock Text="{Binding DataStructureName}"
+                           FontSize="11"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}" />
+                <TextBlock Text="{Binding StatusMessage}"
+                           FontSize="11"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}" />
+            </StackPanel>
+
+            <Border Grid.Row="1"
+                    Margin="12"
+                    BorderBrush="{DynamicResource AppBorderStrongBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                <AvaloniaEdit:TextEditor x:Name="EventRulesEditor"
+                                         IsReadOnly="True"
+                                         ShowLineNumbers="False"
+                                         FontFamily="Consolas"
+                                         FontSize="12"
+                                         Background="{DynamicResource AppWindowBackgroundBrush}"
+                                         HorizontalScrollBarVisibility="Auto"
+                                         VerticalScrollBarVisibility="Auto" />
+            </Border>
+        </Grid>
+    </Grid>
+</reactiveui:ReactiveUserControl>

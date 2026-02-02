@@ -1,0 +1,155 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:models="using:SpecLens.Avalonia.Models"
+        xmlns:settings="using:SpecLens.Avalonia.Settings"
+        x:Class="SpecLens.Avalonia.Settings.SettingsWindow"
+        x:DataType="settings:SettingsViewModel"
+        Title="Settings"
+        Width="820"
+        Height="620"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="16" Background="{DynamicResource AppWindowBackgroundBrush}" RowDefinitions="Auto,*,Auto">
+        <TextBlock Text="Settings"
+                   FontSize="20"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource AppTextPrimaryBrush}" />
+
+        <TabControl Grid.Row="1" Margin="0,16,0,0">
+            <TabItem Header="Application">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
+                                <TextBlock Grid.Row="0" Text="Theme" Width="110" VerticalAlignment="Center" />
+                                <ComboBox Grid.Row="0" Grid.Column="1"
+                                          Width="180"
+                                          ItemsSource="{Binding ThemeModeOptions}"
+                                          SelectedItem="{Binding ThemeMode}"
+                                          VerticalAlignment="Center" />
+                                <CheckBox Grid.Row="1"
+                                          Grid.ColumnSpan="2"
+                                          Content="Enable app logging"
+                                          IsChecked="{Binding IsLoggingEnabled, Mode=TwoWay}" />
+                                <TextBlock Grid.Row="2" Text="Log file path" Width="110" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="2" Grid.Column="1"
+                                         HorizontalAlignment="Stretch"
+                                         Text="{Binding LoggingPath, UpdateSourceTrigger=PropertyChanged}" />
+                                <CheckBox Grid.Row="3"
+                                          Grid.ColumnSpan="2"
+                                          Content="Enable JDE client logging"
+                                          IsChecked="{Binding IsClientLoggingEnabled, Mode=TwoWay}" />
+                                <TextBlock Grid.Row="4" Text="Client log path" Width="110" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="4" Grid.Column="1"
+                                         HorizontalAlignment="Stretch"
+                                         Text="{Binding ClientLoggingPath, UpdateSourceTrigger=PropertyChanged}" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Column Header">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
+                            <StackPanel>
+                                <CheckBox Content="Show table prefix"
+                                          IsChecked="{Binding ShowTablePrefixInHeader, Mode=TwoWay}"
+                                          Margin="0,0,0,10" />
+                                <RadioButton Content="Database column name"
+                                             Command="{Binding SetHeaderDisplayModeCommand}"
+                                             CommandParameter="{x:Static models:ColumnHeaderDisplayMode.DatabaseColumnName}"
+                                             IsChecked="{Binding IsHeaderDisplayModeDatabase}"
+                                             Margin="0,0,0,6" />
+                                <RadioButton Content="Data dictionary"
+                                             Command="{Binding SetHeaderDisplayModeCommand}"
+                                             CommandParameter="{x:Static models:ColumnHeaderDisplayMode.DataDictionary}"
+                                             IsChecked="{Binding IsHeaderDisplayModeDictionary}"
+                                             Margin="0,0,0,6" />
+                                <RadioButton Content="Database column name + description"
+                                             Command="{Binding SetHeaderDisplayModeCommand}"
+                                             CommandParameter="{x:Static models:ColumnHeaderDisplayMode.DatabaseColumnNameWithDescription}"
+                                             IsChecked="{Binding IsHeaderDisplayModeDatabaseWithDescription}" />
+                                <RadioButton Content="Data Dictionary + description"
+                                             Command="{Binding SetHeaderDisplayModeCommand}"
+                                             CommandParameter="{x:Static models:ColumnHeaderDisplayMode.DatabaseDataDictionaryWithDescription}"
+                                             IsChecked="{Binding IsHeaderDisplayModeDataDictionaryWithDescription}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Syntax">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
+                            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto"
+                                  ColumnSpacing="12" RowSpacing="10">
+                                <TextBlock Grid.Row="0" Text="Comments" Width="110" VerticalAlignment="Center" />
+                                <ColorPicker Grid.Row="0" Grid.Column="1"
+                                             Width="180"
+                                             Color="{Binding EventRulesCommentColor, Mode=TwoWay}" />
+                                <TextBlock Grid.Row="0" Grid.Column="2" Text="Links" Width="110" VerticalAlignment="Center" />
+                                <ColorPicker Grid.Row="0" Grid.Column="3"
+                                             Width="180"
+                                             Color="{Binding EventRulesLinkColor, Mode=TwoWay}" />
+
+                                <TextBlock Grid.Row="1" Text="Pipes" Width="110" VerticalAlignment="Center" />
+                                <ColorPicker Grid.Row="1" Grid.Column="1"
+                                             Width="180"
+                                             Color="{Binding EventRulesPipeColor, Mode=TwoWay}" />
+                                <TextBlock Grid.Row="1" Grid.Column="2" Text="Inputs" Width="110" VerticalAlignment="Center" />
+                                <ColorPicker Grid.Row="1" Grid.Column="3"
+                                             Width="180"
+                                             Color="{Binding EventRulesInputColor, Mode=TwoWay}" />
+
+                                <TextBlock Grid.Row="2" Text="Outputs" Width="110" VerticalAlignment="Center" />
+                                <ColorPicker Grid.Row="2" Grid.Column="1"
+                                             Width="180"
+                                             Color="{Binding EventRulesOutputColor, Mode=TwoWay}" />
+                                <TextBlock Grid.Row="2" Grid.Column="2" Text="Equals" Width="110" VerticalAlignment="Center" />
+                                <ColorPicker Grid.Row="2" Grid.Column="3"
+                                             Width="180"
+                                             Color="{Binding EventRulesEqualsColor, Mode=TwoWay}" />
+
+                                <TextBlock Grid.Row="3" Text="Default text" Width="110" VerticalAlignment="Center" />
+                                <ColorPicker Grid.Row="3" Grid.Column="1"
+                                             Width="180"
+                                             Color="{Binding EventRulesDefaultTextColor, Mode=TwoWay}" />
+                                <TextBlock Grid.Row="3" Grid.Column="2" Text="Background" Width="110" VerticalAlignment="Center" />
+                                <ColorPicker Grid.Row="3" Grid.Column="3"
+                                             Width="180"
+                                             Color="{Binding EventRulesEditorBackgroundColor, Mode=TwoWay}" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Query Grid">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+                                    <TextBlock Text="Column width" Width="120" VerticalAlignment="Center" />
+                                    <TextBox Width="80"
+                                             Text="{Binding QueryColumnWidth, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBlock Text="px" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Text="Longer text is truncated in the grid but copied in full."
+                                           FontSize="11"
+                                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                           Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0" Spacing="10">
+            <Button Content="Save" Width="90" IsDefault="True" Click="OnSaveClick" />
+            <Button Content="Close" Width="90" IsCancel="True" Click="OnCloseClick" />
+        </StackPanel>
+    </Grid>
+</Window>

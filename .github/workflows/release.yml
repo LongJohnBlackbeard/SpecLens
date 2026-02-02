@@ -1,0 +1,90 @@
+name: "Release"
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Publish (win-x64, self-contained)
+        run: >-
+          dotnet publish SpecLens.Avalonia/SpecLens.Avalonia.csproj
+          -c Release
+          -r win-x64
+          -p:PublishSingleFile=true
+          -p:SelfContained=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o artifacts/SpecLens-win-x64
+
+      - name: Build release notes from CHANGELOG
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $tag = $env:GITHUB_REF_NAME
+          $version = $tag.TrimStart('v')
+          $lines = Get-Content CHANGELOG.md
+          $startMatch = $lines | Select-String -Pattern "^## \\[$([regex]::Escape($version))\\]" | Select-Object -First 1
+          if (-not $startMatch) {
+            Write-Error "Version $version not found in CHANGELOG.md. Aborting release."
+            exit 1
+          }
+          $startIndex = $startMatch.LineNumber - 1
+          $endIndex = $lines.Length - 1
+          for ($i = $startIndex + 1; $i -lt $lines.Length; $i++) {
+            if ($lines[$i] -match "^## \\[") {
+              $endIndex = $i - 1
+              break
+            }
+          }
+          $lines[$startIndex..$endIndex] | Set-Content artifacts/release-notes.md
+
+      - name: Split symbols
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/SpecLens-win-x64-symbols | Out-Null
+          Get-ChildItem -Path artifacts/SpecLens-win-x64 -Filter *.pdb | Copy-Item -Destination artifacts/SpecLens-win-x64-symbols
+          Get-ChildItem -Path artifacts/SpecLens-win-x64 -Filter *.pdb | Remove-Item -Force
+
+      - name: Zip artifact
+        run: >-
+          Compress-Archive -Path artifacts/SpecLens-win-x64/*
+          -DestinationPath artifacts/SpecLens-win-x64.zip
+
+      - name: Zip symbols
+        run: >-
+          Compress-Archive -Path artifacts/SpecLens-win-x64-symbols/*
+          -DestinationPath artifacts/SpecLens-win-x64-symbols.zip
+
+      - name: Generate checksums
+        run: >-
+          Get-FileHash artifacts/SpecLens-win-x64.zip,artifacts/SpecLens-win-x64-symbols.zip -Algorithm SHA256 |
+          ForEach-Object { "{0}  {1}" -f $_.Hash, $_.Path } |
+          Set-Content artifacts/SpecLens-win-x64.sha256
+
+      - name: Determine prerelease
+        run: |
+          $isPre = $env:GITHUB_REF_NAME -like "*-*"
+          "PRERELEASE=$isPre" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          prerelease: ${{ env.PRERELEASE == 'True' }}
+          body_path: artifacts/release-notes.md
+          files: |
+            artifacts/SpecLens-win-x64.zip
+            artifacts/SpecLens-win-x64-symbols.zip
+            artifacts/SpecLens-win-x64.sha256

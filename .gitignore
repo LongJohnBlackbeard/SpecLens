@@ -1,0 +1,165 @@
+# ================================
+# .NET Build Artifacts
+# ================================
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]uild/
+
+# WPF temporary files (must be before .csproj keep rules)
+*_wpftmp.csproj
+*.g.cs
+*.g.i.cs
+
+# ================================
+# NuGet Packages
+# ================================
+*.nupkg
+*.snupkg
+packages/
+!**/packages/build/
+*.nuget.props
+*.nuget.targets
+
+# ================================
+# Visual Studio / Rider
+# ================================
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+_ReSharper.Caches/
+*.ReSharper
+*.DotSettings.user
+riderModule.iml
+
+# ================================
+# User-specific files
+# ================================
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# ================================
+# Decompiled/Analysis Files
+# ================================
+# PowerShell analysis scripts (used for reverse engineering)
+analyze_binary.ps1
+analyze_dll.ps1
+
+# Decompiled output directories
+decompiled/
+**/decompiled/
+
+# ================================
+# Logs and Temporary Files
+# ================================
+logs/
+*.log
+*.tmp
+*.temp
+*.cache
+
+# ================================
+# Test Artifacts
+# ================================
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+coverage/
+htmlcoverage/
+
+# ================================
+# OS Files
+# ================================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ================================
+# Application Runtime Files
+# ================================
+# User settings (stored in AppData, not in repo)
+UserSettings/
+
+# Export output directory
+Exports/
+
+# ================================
+# Secrets and Local Settings
+# ================================
+.env
+.env.*
+secrets.json
+*.local.json
+*.pfx
+*.p12
+*.p7b
+*.p7c
+*.pem
+*.key
+*.cer
+*.crt
+*.snk
+*.pub
+*.ppk
+*.dmp
+
+# ================================
+# Keep These Files (Documentation & Source)
+# ================================
+# All .cs source files - KEEP
+!**/*.cs
+
+# All .xaml files - KEEP
+!**/*.xaml
+
+# All .csproj and .sln files - KEEP
+!**/*.csproj
+!**/*.sln
+
+# But exclude WPF temporary .csproj files (override above)
+*_wpftmp.csproj
+**/*_wpftmp.csproj
+
+# Configuration files - KEEP
+!**/appsettings.json
+!**/appsettings.Development.json
+!**/appsettings.Production.json
+
+# Documentation - KEEP
+!*.md
+!README.md
+!IMPLEMENTATION.md
+!PROJECT_SUMMARY.md
+!TEAM_HANDOFF.md
+!FINAL_DELIVERY_SUMMARY.md
+!JDE_COM_INTEGRATION_GUIDE.md
+!CONFIGURATION_ARCHITECTURE.md
+
+# Build configuration - KEEP
+!Directory.Build.props
+!.editorconfig
+
+# Git files - KEEP
+!.gitignore
+!.gitattributes
+
+oracle-official-jde-api-docs
+jdeapis_extracted

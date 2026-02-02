@@ -1,0 +1,75 @@
+name: 🐞 Bug Report
+description: Create a report about something that is not working
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If you believe you have an issue that affects the SECURITY of this application, please do NOT create an issue and instead email your issue details a maintainer. 
+        For other types of questions, consider using [StackOverflow](https://stackoverflow.com).
+
+  - type: checkboxes
+    attributes:
+      label: Is there an existing issue for this?
+      description: Please search to see if an issue already exists for the bug you encountered.
+      options:
+        - label: I have searched the existing issues
+          required: true
+
+  - type: textarea
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen.
+    validations:
+      required: false
+      
+  - type: textarea
+    attributes:
+      label: Exceptions (if any)
+      description: Include the exception you get when facing this issue.
+      placeholder:
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or diagnostics
+      description: Paste relevant logs or error messages.
+      render: shell
+
+  - type: input
+    id: apps-version
+    attributes:
+      label: Apps Version
+      description: What App Version are you running?
+      placeholder: 26
+    validations:
+      required: true
+      
+  - type: input
+    id: tools-version
+    attributes:
+      label: Tools Version
+      description: What version tools are you running?
+      placeholder: 	9.2.9.3
+    validations:
+      required: true
+  
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows Version
+      description: What version of windows are you using?
+      placeholder: 	Windows 11 24H2
+    validations:
+      required: true
+      

@@ -1,0 +1,58 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="SpecLens.Avalonia.App"
+             xmlns:local="using:SpecLens.Avalonia"
+             RequestedThemeVariant="Default">
+             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+
+    <Application.Resources>
+        <SolidColorBrush x:Key="AppWindowBackgroundBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="AppPanelBackgroundBrush" Color="#F5F6F7" />
+        <SolidColorBrush x:Key="AppPanelAltBackgroundBrush" Color="#FAFAFA" />
+        <SolidColorBrush x:Key="AppToolbarBackgroundBrush" Color="#F4F6F6" />
+        <SolidColorBrush x:Key="AppBorderBrush" Color="#E0E0E0" />
+        <SolidColorBrush x:Key="AppBorderStrongBrush" Color="#C9CDD3" />
+        <SolidColorBrush x:Key="AppSplitterBrush" Color="#E0E0E0" />
+        <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#1A1A1A" />
+        <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#666666" />
+        <SolidColorBrush x:Key="AppTextMutedBrush" Color="#999999" />
+        <SolidColorBrush x:Key="AppHeaderBackgroundBrush" Color="#1E2A2A" />
+        <SolidColorBrush x:Key="AppHeaderForegroundBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="AppHeaderSubtextBrush" Color="#B7C6C6" />
+        <SolidColorBrush x:Key="AppHeaderButtonBorderBrush" Color="#3A4A4A" />
+        <SolidColorBrush x:Key="AppTitleBarButtonHoverBrush" Color="#2A3A3A" />
+        <SolidColorBrush x:Key="AppAccentBrush" Color="#2F6F5A" />
+        <SolidColorBrush x:Key="AppAccentBorderBrush" Color="#3F7F6A" />
+        <SolidColorBrush x:Key="AppDisconnectBrush" Color="#546E7A" />
+        <SolidColorBrush x:Key="AppDisconnectBorderBrush" Color="#78909C" />
+        <SolidColorBrush x:Key="AppFrozenColumnBrush" Color="#E8F1FF" />
+        <SolidColorBrush x:Key="AppOverlayBrush" Color="#AA000000" />
+        <SolidColorBrush x:Key="AppOverlayTextBrush" Color="#DDDDDD" />
+        <SolidColorBrush x:Key="AppLoadingOverlayBrush" Color="#D0FFFFFF" />
+        <SolidColorBrush x:Key="AppShadowBrush" Color="#20000000" />
+        <BoxShadows x:Key="AppTabShadow">0 2 4 0 #20000000</BoxShadows>
+        <LinearGradientBrush x:Key="AppTabSelectedBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#FFFFFF" Offset="0" />
+            <GradientStop Color="#F4F6F8" Offset="1" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="AppTabUnselectedBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#F0F2F5" Offset="0" />
+            <GradientStop Color="#E3E7EC" Offset="1" />
+        </LinearGradientBrush>
+        <SolidColorBrush x:Key="AppTabAccentBrush" Color="#2F6F5A" />
+    </Application.Resources>
+
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+  
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+        <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
+        <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
+        <Style Selector="ScrollBar">
+            <Setter Property="AllowAutoHide" Value="False" />
+        </Style>
+    </Application.Styles>
+</Application>

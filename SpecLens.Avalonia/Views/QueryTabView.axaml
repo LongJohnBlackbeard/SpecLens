@@ -1,0 +1,452 @@
+<reactiveui:ReactiveUserControl xmlns="https://github.com/avaloniaui"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                                xmlns:models="using:SpecLens.Avalonia.Models"
+                                xmlns:vm="using:SpecLens.Avalonia.ViewModels"
+                                xmlns:controls="using:SpecLens.Avalonia.Controls"
+                                xmlns:converters="using:SpecLens.Avalonia.Converters"
+                                xmlns:reactiveui="using:Avalonia.ReactiveUI"
+                                mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="500"
+                                x:Class="SpecLens.Avalonia.Views.QueryTabView"
+                                x:DataType="vm:QueryTabViewModel"
+                                x:TypeArguments="vm:QueryTabViewModel"
+                                x:Name="Root">
+    <UserControl.Styles>
+        <Style Selector="DataGridColumnHeader" x:CompileBindings="False">
+            <Setter Property="MinHeight" Value="{Binding ElementName=Root, Path=DataContext.HeaderTotalHeight}" />
+            <Setter Property="Padding" Value="2,2,2,2" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="ClipToBounds" Value="True" />
+        </Style>
+        <Style Selector="DataGridCell">
+            <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+        </Style>
+        <Style Selector="ComboBox.query-compact">
+            <Setter Property="MinWidth" Value="110" />
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="MaxHeight" Value="24" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="6,0" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.query-action">
+            <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+        </Style>
+        <Style Selector="Button.query-action:disabled">
+            <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
+            <Setter Property="Opacity" Value="0.55" />
+        </Style>
+    </UserControl.Styles>
+    <UserControl.Resources>
+        <x:Double x:Key="DataGridSortIconMinWidth">0</x:Double>
+        <converters:BooleanNotConverter x:Key="BooleanNotConverter" />
+        <SolidColorBrush x:Key="SelectionBrush" Color="#80B3D9FF" />
+        <SolidColorBrush x:Key="SortAscendingBrush" Color="#C62828" />
+        <SolidColorBrush x:Key="SortDescendingBrush" Color="#2563EB" />
+        <converters:BooleanToBrushConverter x:Key="IndexKeyForegroundConverter"
+                                            TrueBrush="{StaticResource SortAscendingBrush}"
+                                            FalseBrush="{StaticResource AppTextPrimaryBrush}" />
+        <converters:BooleanToBrushConverter x:Key="FrozenHeaderBackgroundConverter"
+                                             TrueBrush="{StaticResource AppFrozenColumnBrush}"
+                                             FalseBrush="Transparent" />
+        <converters:SortStateToBoolConverter x:Key="SortStateToBoolConverter" />
+        <DataTemplate x:Key="FilterHeaderTemplate" x:DataType="models:ColumnFilter">
+            <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1">
+                    <Grid HorizontalAlignment="Stretch">
+                    <Grid.RowDefinitions>
+                        <RowDefinition x:CompileBindings="False"
+                                       Height="{Binding ElementName=Root, Path=DataContext.HeaderRowHeight}" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" VerticalAlignment="Center">
+                        <StackPanel HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Spacing="2">
+                            <TextBlock Text="{Binding HeaderTitle}"
+                                       FontSize="11"
+                                       Foreground="{Binding IsIndexKey, Converter={StaticResource IndexKeyForegroundConverter}}"
+                                       TextWrapping="Wrap"
+                                       TextTrimming="None"
+                                       LineHeight="12"
+                                       TextAlignment="Center"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding HeaderDescription}"
+                                       FontSize="11"
+                                       Foreground="{Binding IsIndexKey, Converter={StaticResource IndexKeyForegroundConverter}}"
+                                       TextWrapping="Wrap"
+                                       TextTrimming="None"
+                                       LineHeight="12"
+                                       TextAlignment="Center"
+                                       HorizontalAlignment="Center"
+                                       IsVisible="{Binding ShowHeaderDescription}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Margin="0,0,6,2"
+                                    IsVisible="{Binding IsSortAscending}">
+                            <Path Data="M0,6 L4,2 L8,6 Z"
+                                  Fill="{StaticResource SortAscendingBrush}"
+                                  Width="8"
+                                  Height="6"
+                                  Stretch="Uniform"
+                                  Margin="0,0,2,0" />
+                            <TextBlock Text="{Binding SortIndex}"
+                                       FontSize="9"
+                                       Foreground="{StaticResource SortAscendingBrush}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Margin="0,0,6,2"
+                                    IsVisible="{Binding IsSortDescending}">
+                            <Path Data="M0,2 L4,6 L8,2 Z"
+                                  Fill="{StaticResource SortDescendingBrush}"
+                                  Width="8"
+                                  Height="6"
+                                  Stretch="Uniform"
+                                  Margin="0,0,2,0" />
+                            <TextBlock Text="{Binding SortIndex}"
+                                       FontSize="9"
+                                       Foreground="{StaticResource SortDescendingBrush}" />
+                        </StackPanel>
+                    </Grid>
+                    <TextBox Grid.Row="1"
+                             Margin="2,4,2,2"
+                             MinHeight="24"
+                             Padding="6,2,6,2"
+                             TextAlignment="Left"
+                             GotFocus="OnFilterTextBoxGotFocus"
+                             HorizontalAlignment="Stretch"
+                             Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+        <DataTemplate x:Key="ViewportHeaderTemplate" x:DataType="models:ViewportHeaderColumn">
+            <Border Width="{Binding Width}"
+                    Background="Transparent"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="0,0,1,1"
+                    PointerPressed="OnViewportHeaderPointerPressed"
+                    PointerMoved="OnViewportHeaderPointerMoved"
+                    PointerReleased="OnViewportHeaderPointerReleased"
+                    DoubleTapped="OnViewportHeaderDoubleTapped">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition x:CompileBindings="False"
+                                       Height="{Binding ElementName=Root, Path=DataContext.HeaderRowHeight}" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Border Background="{Binding Column.IsFrozen, Converter={StaticResource FrozenHeaderBackgroundConverter}}"
+                            Grid.RowSpan="2" />
+                    <Grid Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
+                        <StackPanel HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Spacing="2">
+                            <TextBlock Text="{Binding Filter.HeaderTitle}"
+                                       FontSize="11"
+                                       Foreground="{Binding Filter.IsIndexKey, Converter={StaticResource IndexKeyForegroundConverter}}"
+                                       TextWrapping="Wrap"
+                                       TextTrimming="None"
+                                       LineHeight="12"
+                                       TextAlignment="Center"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding Filter.HeaderDescription}"
+                                       FontSize="11"
+                                       Foreground="{Binding Filter.IsIndexKey, Converter={StaticResource IndexKeyForegroundConverter}}"
+                                       TextWrapping="Wrap"
+                                       TextTrimming="None"
+                                       LineHeight="12"
+                                       TextAlignment="Center"
+                                       HorizontalAlignment="Center"
+                                       IsVisible="{Binding Filter.ShowHeaderDescription}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Margin="0,0,6,2"
+                                    IsVisible="{Binding Filter.IsSortAscending}">
+                            <Path Data="M0,6 L4,2 L8,6 Z"
+                                  Fill="{StaticResource SortAscendingBrush}"
+                                  Width="8"
+                                  Height="6"
+                                  Stretch="Uniform"
+                                  Margin="0,0,2,0" />
+                            <TextBlock Text="{Binding Filter.SortIndex}"
+                                       FontSize="9"
+                                       Foreground="{StaticResource SortAscendingBrush}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Margin="0,0,6,2"
+                                    IsVisible="{Binding Filter.IsSortDescending}">
+                            <Path Data="M0,2 L4,6 L8,2 Z"
+                                  Fill="{StaticResource SortDescendingBrush}"
+                                  Width="8"
+                                  Height="6"
+                                  Stretch="Uniform"
+                                  Margin="0,0,2,0" />
+                            <TextBlock Text="{Binding Filter.SortIndex}"
+                                       FontSize="9"
+                                       Foreground="{StaticResource SortDescendingBrush}" />
+                        </StackPanel>
+                    </Grid>
+                    <TextBox Grid.Row="1"
+                             Margin="2,4,2,2"
+                             MinHeight="24"
+                             Padding="6,2,6,2"
+                             TextAlignment="Left"
+                             GotFocus="OnFilterTextBoxGotFocus"
+                             HorizontalAlignment="Stretch"
+                             Text="{Binding Filter.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <Thumb Grid.RowSpan="2"
+                           Width="6"
+                           HorizontalAlignment="Right"
+                           Background="Transparent"
+                           Opacity="0"
+                           IsHitTestVisible="False" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+    <Grid RowDefinitions="Auto,*">
+        <!-- Toolbar -->
+        <Border Grid.Row="0" Background="{DynamicResource AppToolbarBackgroundBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" Padding="8" CornerRadius="6">
+            <Grid RowDefinitions="Auto" ColumnDefinitions="*,Auto" RowSpacing="6">
+                <!-- Data Source & Index Selection -->
+                <WrapPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,5,0">
+                        <TextBlock Text="Data Source" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center" />
+                        <ComboBox ItemsSource="{Binding DataSources}"
+                                  SelectedItem="{Binding SelectedDataSource}"
+                                  Classes="query-compact"
+                                  PlaceholderText="Select data source">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,5,0">
+                        <TextBlock Text="Index" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center" />
+                        <ComboBox ItemsSource="{Binding Indexes}"
+                                  SelectedItem="{Binding SelectedIndex}"
+                                  Classes="query-compact"
+                                  PlaceholderText="Select index"
+                                  IsEnabled="{Binding IsBusinessView, Converter={StaticResource BooleanNotConverter}}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayName}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,5,0">
+                        <TextBlock Text="Go To" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center" />
+                        <ComboBox ItemsSource="{Binding ColumnNames}"
+                                  SelectedItem="{Binding SelectedColumnName}"
+                                  Classes="query-compact"
+                                  x:Name="GoToColumnCombo"
+                                  DropDownOpened="OnGoToDropDownOpened"
+                                  DropDownClosed="OnGoToDropDownClosed"
+                                  SelectionChanged="OnGoToColumnSelectionChanged" />
+                    </StackPanel>
+                </WrapPanel>
+
+                <!-- Control Buttons -->
+                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <!-- Status Message -->
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,5,0">
+                        <TextBlock Text="{Binding StatusMessage}"
+                                   Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                   FontWeight="SemiBold"
+                                   FontSize="10"
+                                   TextWrapping="Wrap"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Foreground="{DynamicResource AppTextSecondaryBrush}" FontSize="10" >
+                            <Run Text=" | Rows: " />
+                            <Run Text="{Binding RowCount}" />
+                        </TextBlock>
+                    </StackPanel>
+                    
+                    <Button Command="{Binding RunQueryCommand}"
+                            Classes="query-action"
+                            Width="34"
+                            Height="26"
+                            Padding="0"
+                            ToolTip.Tip="Run query (Enter)">
+                        <Viewbox Width="12" Height="12" Stretch="Uniform">
+                            <Path Data="M0,0 L0,10 L8,5 Z"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                        </Viewbox>
+                    </Button>
+                    <Button Command="{Binding PauseQueryCommand}"
+                            Classes="query-action"
+                            Width="34"
+                            Height="26"
+                            Padding="0"
+                            ToolTip.Tip="Pause query">
+                        <Viewbox Width="12" Height="12" Stretch="Uniform">
+                            <Path Data="M0,0 H3 V10 H0 Z M5,0 H8 V10 H5 Z"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                        </Viewbox>
+                    </Button>
+                    <Button Command="{Binding StopQueryCommand}"
+                            Classes="query-action"
+                            Width="34"
+                            Height="26"
+                            Padding="0"
+                            ToolTip.Tip="Stop query">
+                        <Viewbox Width="12" Height="12" Stretch="Uniform">
+                            <Path Data="M0,0 H8 V8 H0 Z"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                        </Viewbox>
+                    </Button>
+                    <Button Command="{Binding ClearQueryCommand}"
+                            Classes="query-action"
+                            Width="34"
+                            Height="26"
+                            Padding="0"
+                            ToolTip.Tip="Clear results and filters">
+                        <Viewbox Width="12" Height="12" Stretch="Uniform">
+                            <Path Data="M1,1 L7,7 M7,1 L1,7"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  StrokeThickness="1.5"
+                                  StrokeLineCap="Round" />
+                        </Viewbox>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Query Results -->
+        <Grid Grid.Row="1" RowDefinitions="Auto,*" KeyDown="OnGridEnterKeyDown">
+            <Border Grid.Row="0"
+                    Margin="0,6,0,0"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1,1,1,0"
+                    Background="{DynamicResource AppWindowBackgroundBrush}"
+                    IsVisible="{Binding UseViewportGrid}">
+                <Grid ColumnDefinitions="Auto,*">
+                    <Border Width="{Binding FrozenHeaderWidth}"
+                            BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1,0,1,0"
+                            ClipToBounds="True">
+                        <ItemsControl x:Name="FrozenHeaderItems"
+                                      ItemsSource="{Binding FrozenHeaderColumns}"
+                                      ItemTemplate="{StaticResource ViewportHeaderTemplate}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </Border>
+                    <Border Grid.Column="1" ClipToBounds="True">
+                        <ItemsControl x:Name="ScrollableHeaderItems"
+                                      ItemsSource="{Binding ScrollableHeaderColumns}"
+                                      ItemTemplate="{StaticResource ViewportHeaderTemplate}"
+                                      Width="{Binding ScrollableHeaderWidth}"
+                                      HorizontalAlignment="Left">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <ScrollViewer Grid.Row="1"
+                          Margin="0,0,0,0"
+                          HorizontalScrollBarVisibility="Visible"
+                          VerticalScrollBarVisibility="Visible"
+                          IsVisible="{Binding UseViewportGrid}">
+                <controls:ViewportGrid x:Name="ViewportGridControl"
+                                       DataProvider="{Binding ViewportDataProvider}"
+                                       Columns="{Binding ViewportColumns}"
+                                       RowHeight="22"
+                                       TotalRowCount="{Binding RowCount}"
+                                       FrozenColumnCount="{Binding FrozenColumnCount}"
+                                       GridLineBrush="{DynamicResource AppBorderBrush}"
+                                       GridLineThickness="1"
+                                       FrozenColumnBrush="{DynamicResource AppFrozenColumnBrush}"
+                                       SelectionBrush="{StaticResource SelectionBrush}"
+                                       Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                       HorizontalAlignment="Stretch"
+                                       VerticalAlignment="Stretch"
+                                       FontSize="9"
+                                       KeyDown="OnGridEnterKeyDown">
+                    <controls:ViewportGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Copy" Click="OnViewportCopyClick" />
+                        </ContextMenu>
+                    </controls:ViewportGrid.ContextMenu>
+                </controls:ViewportGrid>
+            </ScrollViewer>
+
+            <Canvas x:Name="ResizeGuideHost"
+                    Grid.Row="0"
+                    Grid.RowSpan="2"
+                    Panel.ZIndex="5"
+                    IsHitTestVisible="False"
+                    IsVisible="{Binding UseViewportGrid}">
+                <Border x:Name="ResizeGuideLine"
+                        Width="1"
+                        Background="#3B82F6"
+                        IsVisible="False" />
+                <Border x:Name="DragGuideLine"
+                        Width="2"
+                        Background="#10B981"
+                        IsVisible="False" />
+            </Canvas>
+
+            <DataGrid Grid.Row="0"
+                      Grid.RowSpan="2"
+                      x:Name="QueryResultsGrid"
+                      Margin="0,12,0,0"
+                      IsVisible="{Binding UseViewportGrid, Converter={StaticResource BooleanNotConverter}}"
+                      ItemsSource="{Binding QueryResults}"
+                      x:CompileBindings="False"
+                      ColumnHeaderHeight="{Binding ElementName=Root, Path=DataContext.HeaderTotalHeight}"
+                      RowHeight="22"
+                      AttachedToVisualTree="OnQueryGridAttached"
+                      DetachedFromVisualTree="OnQueryGridDetached"
+                      DoubleTapped="OnQueryGridDoubleTapped"
+                      PointerPressed="OnQueryGridPointerPressed"
+                      CurrentCellChanged="OnQueryGridCurrentCellChanged"
+                      KeyDown="OnGridEnterKeyDown"
+                      IsReadOnly="True"
+                      GridLinesVisibility="All"
+                      BorderBrush="{DynamicResource AppBorderBrush}"
+                      BorderThickness="1"
+                      AutoGenerateColumns="False"
+                      CanUserReorderColumns="True"
+                      CanUserResizeColumns="True"
+                      CanUserSortColumns="False"
+                      ColumnReordered="OnQueryColumnReordered"
+                      SelectionMode="Extended"
+                      Foreground="{DynamicResource AppTextPrimaryBrush}"
+                      FontSize="9">
+            </DataGrid>
+        </Grid>
+
+        <!-- Loading Overlay -->
+        <Border Grid.Row="0" Grid.RowSpan="2"
+                Background="{DynamicResource AppLoadingOverlayBrush}"
+                IsVisible="{Binding IsLoading}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+                <TextBlock Text="Loading..." FontSize="16" Foreground="{DynamicResource AppTextSecondaryBrush}" />
+                <ProgressBar IsIndeterminate="True" Width="200" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</reactiveui:ReactiveUserControl>

@@ -1,0 +1,369 @@
+<reactiveui:ReactiveUserControl xmlns="https://github.com/avaloniaui"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                                xmlns:vm="using:SpecLens.Avalonia.ViewModels"
+                                xmlns:controls="using:SpecLens.Avalonia.Controls"
+                                xmlns:grid="using:ViewportGrid.Core.Models"
+                                xmlns:reactiveui="using:Avalonia.ReactiveUI"
+                                mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="500"
+                                x:Class="SpecLens.Avalonia.Views.SpecsTabView"
+                                x:DataType="vm:SpecsTabViewModel"
+                                x:TypeArguments="vm:SpecsTabViewModel">
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="SpecsSelectionBrush" Color="#80B3D9FF" />
+        <DataTemplate x:Key="SpecsHeaderTemplate" x:DataType="grid:ColumnMetadata">
+            <Border Width="{Binding Width}"
+                    Background="{DynamicResource AppPanelBackgroundBrush}"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="0,0,1,1"
+                    PointerPressed="OnSpecsHeaderPointerPressed"
+                    PointerMoved="OnSpecsHeaderPointerMoved"
+                    PointerReleased="OnSpecsHeaderPointerReleased">
+                <Grid ColumnDefinitions="*,6">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding DisplayName}"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               Margin="6,4"
+                               TextTrimming="CharacterEllipsis" />
+                    <Thumb Grid.Column="1"
+                           Width="6"
+                           Background="Transparent"
+                           Cursor="SizeWestEast"
+                           DragStarted="OnSpecsHeaderResizeStarted"
+                           DragDelta="OnSpecsHeaderResizeDelta"
+                           DragCompleted="OnSpecsHeaderResizeCompleted" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+    <Grid RowDefinitions="Auto,Auto,*">
+        <!-- Header Info -->
+        <StackPanel Grid.Row="0">
+            <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding TableName}" />
+            <TextBlock Foreground="{DynamicResource AppTextSecondaryBrush}"
+                       Text="{Binding TableDescription}"
+                       TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <TextBlock Foreground="{DynamicResource AppTextSecondaryBrush}" Text="Columns:" />
+                <TextBlock Foreground="{DynamicResource AppTextPrimaryBrush}" Margin="6,0,16,0">
+                    <Run Text="{Binding ColumnCount}" />
+                </TextBlock>
+                <TextBlock Foreground="{DynamicResource AppTextSecondaryBrush}" Text="Prefix:" />
+                <TextBlock Foreground="{DynamicResource AppTextPrimaryBrush}" Text="{Binding Prefix}" Margin="6,0,16,0" />
+                <TextBlock Foreground="{DynamicResource AppTextSecondaryBrush}" Text="System:" />
+                <TextBlock Foreground="{DynamicResource AppTextPrimaryBrush}" Text="{Binding SystemCode}" Margin="6,0,0,0" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Status Message -->
+        <TextBlock Grid.Row="1" Margin="0,8,0,0" Text="{Binding StatusMessage}" Foreground="{DynamicResource AppTextSecondaryBrush}" />
+
+        <!-- Columns and Indexes / View Details -->
+        <Grid Grid.Row="2" Margin="0,12,0,0">
+            <!-- Table Layout -->
+            <Grid IsVisible="{Binding IsTableSpec}" ColumnDefinitions="2*,6,*">
+                <!-- Columns Grid -->
+                <Grid Grid.Column="0" RowDefinitions="Auto,*">
+                    <Border Grid.Row="0"
+                            BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1,1,1,0"
+                            Background="{DynamicResource AppPanelBackgroundBrush}">
+                        <ItemsControl x:Name="ColumnsHeaderItems"
+                                      ItemsSource="{Binding ColumnsViewportColumns}"
+                                      ItemTemplate="{StaticResource SpecsHeaderTemplate}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </Border>
+                    <ScrollViewer Grid.Row="1"
+                                  HorizontalScrollBarVisibility="Visible"
+                                  VerticalScrollBarVisibility="Visible">
+                        <controls:ViewportGrid x:Name="ColumnsViewportGrid"
+                                               DataProvider="{Binding ColumnsViewportDataProvider}"
+                                               Columns="{Binding ColumnsViewportColumns}"
+                                               TotalRowCount="{Binding ColumnsRowCount}"
+                                               RowHeight="22"
+                                               GridLineBrush="{DynamicResource AppBorderBrush}"
+                                               GridLineThickness="1"
+                                               SelectionBrush="{StaticResource SpecsSelectionBrush}"
+                                               Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                               FontSize="9"
+                                               HorizontalAlignment="Stretch"
+                                               VerticalAlignment="Stretch">
+                            <controls:ViewportGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Copy"
+                                              Click="OnViewportCopyMenuClick" />
+                                </ContextMenu>
+                            </controls:ViewportGrid.ContextMenu>
+                        </controls:ViewportGrid>
+                    </ScrollViewer>
+                    <Canvas x:Name="ColumnsResizeGuideHost"
+                            Grid.Row="0"
+                            Grid.RowSpan="2"
+                            Panel.ZIndex="5"
+                            IsHitTestVisible="False">
+                        <Border x:Name="ColumnsResizeGuideLine"
+                                Width="1"
+                                Background="#3B82F6"
+                                IsVisible="False" />
+                    </Canvas>
+                </Grid>
+
+                <!-- GridSplitter -->
+                <GridSplitter Grid.Column="1"
+                              Width="6"
+                              Background="{DynamicResource AppSplitterBrush}" />
+
+                <!-- Indexes Grid -->
+                <Grid Grid.Column="2" RowDefinitions="Auto,*">
+                    <Border Grid.Row="0"
+                            BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1,1,1,0"
+                            Background="{DynamicResource AppPanelBackgroundBrush}">
+                        <ItemsControl x:Name="IndexesHeaderItems"
+                                      ItemsSource="{Binding IndexesViewportColumns}"
+                                      ItemTemplate="{StaticResource SpecsHeaderTemplate}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </Border>
+                    <ScrollViewer Grid.Row="1"
+                                  HorizontalScrollBarVisibility="Visible"
+                                  VerticalScrollBarVisibility="Visible">
+                        <controls:ViewportGrid x:Name="IndexesViewportGrid"
+                                               DataProvider="{Binding IndexesViewportDataProvider}"
+                                               Columns="{Binding IndexesViewportColumns}"
+                                               TotalRowCount="{Binding IndexesRowCount}"
+                                               RowHeight="22"
+                                               GridLineBrush="{DynamicResource AppBorderBrush}"
+                                               GridLineThickness="1"
+                                               SelectionBrush="{StaticResource SpecsSelectionBrush}"
+                                               Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                               FontSize="9"
+                                               HorizontalAlignment="Stretch"
+                                               VerticalAlignment="Stretch">
+                            <controls:ViewportGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Copy"
+                                              Click="OnViewportCopyMenuClick" />
+                                </ContextMenu>
+                            </controls:ViewportGrid.ContextMenu>
+                        </controls:ViewportGrid>
+                    </ScrollViewer>
+                    <Canvas x:Name="IndexesResizeGuideHost"
+                            Grid.Row="0"
+                            Grid.RowSpan="2"
+                            Panel.ZIndex="5"
+                            IsHitTestVisible="False">
+                        <Border x:Name="IndexesResizeGuideLine"
+                                Width="1"
+                                Background="#3B82F6"
+                                IsVisible="False" />
+                    </Canvas>
+                </Grid>
+            </Grid>
+
+            <!-- Business View Layout -->
+            <Grid IsVisible="{Binding IsBusinessView}"
+                  ColumnDefinitions="*,6,*">
+                <!-- Columns (Left) -->
+                <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*">
+                    <TextBlock Grid.Row="0"
+                               Text="Columns"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource AppTextPrimaryBrush}" />
+                    <Border Grid.Row="1"
+                            BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1,1,1,0"
+                            Background="{DynamicResource AppPanelBackgroundBrush}"
+                            Margin="0,4,0,0">
+                        <ItemsControl x:Name="ViewColumnsHeaderItems"
+                                      ItemsSource="{Binding ColumnsViewportColumns}"
+                                      ItemTemplate="{StaticResource SpecsHeaderTemplate}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </Border>
+                    <ScrollViewer Grid.Row="2"
+                                  HorizontalScrollBarVisibility="Visible"
+                                  VerticalScrollBarVisibility="Visible">
+                        <controls:ViewportGrid x:Name="ViewColumnsViewportGrid"
+                                               DataProvider="{Binding ColumnsViewportDataProvider}"
+                                               Columns="{Binding ColumnsViewportColumns}"
+                                               TotalRowCount="{Binding ColumnsRowCount}"
+                                               RowHeight="22"
+                                               GridLineBrush="{DynamicResource AppBorderBrush}"
+                                               GridLineThickness="1"
+                                               SelectionBrush="{StaticResource SpecsSelectionBrush}"
+                                               Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                               FontSize="9"
+                                               HorizontalAlignment="Stretch"
+                                               VerticalAlignment="Stretch">
+                            <controls:ViewportGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Copy"
+                                              Click="OnViewportCopyMenuClick" />
+                                </ContextMenu>
+                            </controls:ViewportGrid.ContextMenu>
+                        </controls:ViewportGrid>
+                    </ScrollViewer>
+                    <Canvas x:Name="ViewColumnsResizeGuideHost"
+                            Grid.Row="0"
+                            Grid.RowSpan="3"
+                            Panel.ZIndex="5"
+                            IsHitTestVisible="False">
+                        <Border x:Name="ViewColumnsResizeGuideLine"
+                                Width="1"
+                                Background="#3B82F6"
+                                IsVisible="False" />
+                    </Canvas>
+                </Grid>
+
+                <!-- Splitter between left and right -->
+                <GridSplitter Grid.Column="1"
+                              Width="6"
+                              Background="{DynamicResource AppSplitterBrush}" />
+
+                <!-- Tables + Joins (Right) -->
+                <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*,6,Auto,Auto,*">
+                    <TextBlock Grid.Row="0"
+                               Text="Tables"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource AppTextPrimaryBrush}" />
+                    <Border Grid.Row="1"
+                            BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1,1,1,0"
+                            Background="{DynamicResource AppPanelBackgroundBrush}"
+                            Margin="0,4,0,0">
+                        <ItemsControl x:Name="ViewTablesHeaderItems"
+                                      ItemsSource="{Binding ViewTablesViewportColumns}"
+                                      ItemTemplate="{StaticResource SpecsHeaderTemplate}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </Border>
+                    <ScrollViewer Grid.Row="2"
+                                  HorizontalScrollBarVisibility="Visible"
+                                  VerticalScrollBarVisibility="Visible">
+                        <controls:ViewportGrid x:Name="ViewTablesViewportGrid"
+                                               DataProvider="{Binding ViewTablesViewportDataProvider}"
+                                               Columns="{Binding ViewTablesViewportColumns}"
+                                               TotalRowCount="{Binding ViewTablesRowCount}"
+                                               RowHeight="22"
+                                               GridLineBrush="{DynamicResource AppBorderBrush}"
+                                               GridLineThickness="1"
+                                               SelectionBrush="{StaticResource SpecsSelectionBrush}"
+                                               Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                               FontSize="9"
+                                               HorizontalAlignment="Stretch"
+                                               VerticalAlignment="Stretch">
+                            <controls:ViewportGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Copy"
+                                              Click="OnViewportCopyMenuClick" />
+                                </ContextMenu>
+                            </controls:ViewportGrid.ContextMenu>
+                        </controls:ViewportGrid>
+                    </ScrollViewer>
+                    <Canvas x:Name="ViewTablesResizeGuideHost"
+                            Grid.Row="0"
+                            Grid.RowSpan="3"
+                            Panel.ZIndex="5"
+                            IsHitTestVisible="False">
+                        <Border x:Name="ViewTablesResizeGuideLine"
+                                Width="1"
+                                Background="#3B82F6"
+                                IsVisible="False" />
+                    </Canvas>
+
+                    <GridSplitter Grid.Row="3"
+                                  Height="6"
+                                  Background="{DynamicResource AppSplitterBrush}"
+                                  HorizontalAlignment="Stretch" />
+
+                    <TextBlock Grid.Row="4"
+                               Text="Joins"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource AppTextPrimaryBrush}"
+                               Margin="0,6,0,0" />
+                    <Border Grid.Row="5"
+                            BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1,1,1,0"
+                            Background="{DynamicResource AppPanelBackgroundBrush}"
+                            Margin="0,4,0,0">
+                        <ItemsControl x:Name="ViewJoinsHeaderItems"
+                                      ItemsSource="{Binding ViewJoinsViewportColumns}"
+                                      ItemTemplate="{StaticResource SpecsHeaderTemplate}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </Border>
+                    <ScrollViewer Grid.Row="6"
+                                  HorizontalScrollBarVisibility="Visible"
+                                  VerticalScrollBarVisibility="Visible">
+                        <controls:ViewportGrid x:Name="ViewJoinsViewportGrid"
+                                               DataProvider="{Binding ViewJoinsViewportDataProvider}"
+                                               Columns="{Binding ViewJoinsViewportColumns}"
+                                               TotalRowCount="{Binding ViewJoinsRowCount}"
+                                               RowHeight="22"
+                                               GridLineBrush="{DynamicResource AppBorderBrush}"
+                                               GridLineThickness="1"
+                                               SelectionBrush="{StaticResource SpecsSelectionBrush}"
+                                               Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                               FontSize="9"
+                                               HorizontalAlignment="Stretch"
+                                               VerticalAlignment="Stretch">
+                            <controls:ViewportGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Copy"
+                                              Click="OnViewportCopyMenuClick" />
+                                </ContextMenu>
+                            </controls:ViewportGrid.ContextMenu>
+                        </controls:ViewportGrid>
+                    </ScrollViewer>
+                    <Canvas x:Name="ViewJoinsResizeGuideHost"
+                            Grid.Row="4"
+                            Grid.RowSpan="3"
+                            Panel.ZIndex="5"
+                            IsHitTestVisible="False">
+                        <Border x:Name="ViewJoinsResizeGuideLine"
+                                Width="1"
+                                Background="#3B82F6"
+                                IsVisible="False" />
+                    </Canvas>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- Loading Overlay -->
+        <Border Grid.Row="0" Grid.RowSpan="3"
+                Background="{DynamicResource AppLoadingOverlayBrush}"
+                IsVisible="{Binding IsLoading}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+                <TextBlock Text="Loading specs..." FontSize="16" Foreground="{DynamicResource AppTextSecondaryBrush}" />
+                <ProgressBar IsIndeterminate="True" Width="200" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</reactiveui:ReactiveUserControl>
