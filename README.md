@@ -47,6 +47,16 @@ can be reported through the Issues tab.
 - Avalonia runs on .NET, and a self-contained publish bundles the .NET runtime and required framework libraries directly into the executable so users don’t need to install .NET separately.
 - As a result, most of the 75 MB (roughly 65–85%) is the bundled .NET runtime/framework, not the application code itself.
 
+## Associated Documents
+- [AI_USE_POLICY](AI_USE_POLICY.md)
+- [AGENTS](AGENTS.md)
+- [Testing Best Practices](TESTING_BEST_PRACTICES.md)
+- [Testing Examples](TESTING_EXAMPLES.md)
+- [Logging](docs/LOGGING.md)
+- [Repository Setup](docs/REPOSITORY_SETUP.md)
+- [JDE API Workflows](docs/JDE_API_WORKFLOWS.md)
+- [JdeClient.Core README](JdeClient.Core/README.md)
+
 ## Build and run
 ```bash
 dotnet build SpecLens.sln
