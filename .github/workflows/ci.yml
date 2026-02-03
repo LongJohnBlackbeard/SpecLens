@@ -41,7 +41,7 @@ jobs:
         run: reportgenerator -reports:"TestResults/coverage/coverage.cobertura.xml" -targetdir:"TestResults/coverage-report" -reporttypes:"HtmlInline;Cobertura;TextSummary;MarkdownSummary"
 
       - name: Upload Coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: TestResults/coverage/coverage.cobertura.xml
           fail_ci_if_error: false
