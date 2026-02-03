@@ -1,15 +1,46 @@
 ## Summary
 - 
 
-## Testing
-- [ ] dotnet build SpecLens.sln
-- [ ] dotnet test JdeClient.Core.UnitTests/JdeClient.Core.UnitTests.csproj
+## Change Type
+- [ ] Feature
+- [ ] Bug fix
+- [ ] Refactor / cleanup
+- [ ] Docs
+- [ ] Build / CI
 
-## JDE runtime notes
-- [ ] This change requires a JDE runtime to validate
-- [ ] This change does not require a JDE runtime
-- [ ] Integration tests are manual-only and are not part of CI workflows
+## Impact
+- Projects affected:
+- Behavior change (what/where):
+
+## Security
+- [ ] No secrets/PII logged or persisted
+- [ ] Redaction/sanitization rules preserved (if applicable)
+
+## Performance
+- [ ] No meaningful perf impact
+- [ ] Perf impact noted below
+
+## Cross-project Analysis
+- [ ] No cross-project updates required
+- [ ] Cross-project updates required (listed below)
+
+## Testing
+- [ ] dotnet build SpecLens.sln -c Release
+- [ ] dotnet test SpecLens.sln -c Release
+- [ ] Other (describe):
+
+## JDE Runtime Notes
+- [ ] Requires JDE runtime to validate
+- [ ] Does not require JDE runtime
+- [ ] Integration tests are manual-only and not run in CI
 
 ## Documentation
-- [ ] Documentation updated (README/CONTRIBUTING/SECURITY or project README)
+- [ ] Documentation updated (README / project README / docs/*)
 - [ ] No documentation changes needed
+
+## Screenshots / UI
+- [ ] Not applicable
+- [ ] Attached
+
+## Notes / Risks
+- 

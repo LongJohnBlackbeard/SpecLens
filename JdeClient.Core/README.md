@@ -497,7 +497,7 @@ For a mapping of these workflows to the underlying JDE C APIs, see
 ### Development Requirements
 
 - .NET 8 SDK
-- Visual Studio 2022 or Rider
+- Visual Studio 2022, Rider, or any other IDE
 - Optional: JDE installation for testing
 
 ## Logging
@@ -558,28 +558,6 @@ app and client logs to separate files. See `../docs/LOGGING.md` for details.
 - **Caching**: Spec data is cached by JDE APIs internally
 - **Memory**: Always dispose JdeClient to free handles
 - **Threading**: Client is NOT thread-safe - use one per thread
-
-## Roadmap
-
-### v1.0 (Current)
-- [x] Connection management
-- [x] Object catalog browsing (F9860)
-- [x] Basic table metadata
-- [x] Exception handling
-- [x] Table queries + filters + streaming
-- [x] Row counting
-
-### v1.1 (Planned)
-- [ ] Expanded WHERE clause support (OR/grouping)
-- [ ] Full column metadata parsing
-- [ ] Business function calling
-- [ ] Transaction support
-
-### v2.0 (Future)
-- [ ] Async enumeration (IAsyncEnumerable)
-- [ ] Caching layer
-- [ ] Connection pooling
-- [ ] NuGet package
 
 ## Contributing
 

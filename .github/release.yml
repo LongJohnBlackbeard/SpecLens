@@ -1,43 +1,56 @@
-changelog:
-  exclude:
-    authors:
-      - dependabot
-      - dependabot[bot]
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+
+template: |
+  ## Changes
+  $CHANGES
+
+  ## Contributors
+  $CONTRIBUTORS
+
+change-template: '* $TITLE (#$NUMBER) @$AUTHOR'
+no-changes-template: '* No changes'
+
+categories:
+  - title: Breaking Changes
     labels:
-      - ignore-for-release
-      - dependencies
-  categories:
-    - title: Breaking Changes
-      labels:
-        - breaking
-        - breaking-change
-    - title: New Features
-      labels:
-        - feature
-        - enhancement
-    - title: Bug Fixes
-      labels:
-        - bug
-        - fix
-    - title: Documentation
-      labels:
-        - docs
-        - documentation
-    - title: Performance
-      labels:
-        - performance
-    - title: Security
-      labels:
-        - security
-    - title: Build & CI
-      labels:
-        - build
-        - ci
-    - title: Maintenance
-      labels:
-        - chore
-        - refactor
-        - cleanup
-    - title: Other Changes
-      labels:
-        - "*"
+      - breaking
+      - breaking-change
+  - title: New Features
+    labels:
+      - feature
+      - enhancement
+  - title: Bug Fixes
+    labels:
+      - bug
+      - fix
+  - title: Documentation
+    labels:
+      - docs
+      - documentation
+  - title: Performance
+    labels:
+      - performance
+  - title: Security
+    labels:
+      - security
+  - title: Build & CI
+    labels:
+      - build
+      - ci
+  - title: Maintenance
+    labels:
+      - chore
+      - refactor
+      - cleanup
+  - title: Other Changes
+    labels:
+      - "*"
+
+exclude-labels:
+  - ignore-for-release
+  - dependencies
+
+exclude-contributors:
+  - dependabot
+  - dependabot[bot]
