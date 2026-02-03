@@ -1,11 +1,11 @@
 using System;
 using System.Reactive.Linq;
 using System.Windows.Input;
-using Avalonia.ReactiveUI;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.VisualTree;
 using ReactiveUI;
+using ReactiveUI.Avalonia;
 using RoutedEventArgs = global::Avalonia.Interactivity.RoutedEventArgs;
 using SpecLens.Avalonia.Settings;
 using SpecLens.Avalonia.Services;

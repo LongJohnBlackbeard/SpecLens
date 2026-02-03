@@ -3,6 +3,7 @@ using System.Collections;
 using System.ComponentModel;
 using System.Linq;
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -11,8 +12,8 @@ using Avalonia.VisualTree;
 using AvaloniaEdit.Editing;
 using AvaloniaEdit.Folding;
 using AvaloniaEdit.Rendering;
-using Avalonia.ReactiveUI;
 using ReactiveUI;
+using ReactiveUI.Avalonia;
 using SpecLens.Avalonia.Services;
 using SpecLens.Avalonia.ViewModels;
 

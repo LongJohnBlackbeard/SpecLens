@@ -1,4 +1,4 @@
-<reactiveui:ReactiveUserControl xmlns="https://github.com/avaloniaui"
+<avalonia:ReactiveUserControl xmlns="https://github.com/avaloniaui"
                                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                                 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
                                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -6,7 +6,8 @@
                                 xmlns:vm="using:SpecLens.Avalonia.ViewModels"
                                 xmlns:controls="using:SpecLens.Avalonia.Controls"
                                 xmlns:converters="using:SpecLens.Avalonia.Converters"
-                                xmlns:reactiveui="using:Avalonia.ReactiveUI"
+                                xmlns:reactiveui="using:ReactiveUI.Avalonia"
+                                xmlns:avalonia="http://reactiveui.net"
                                 mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="500"
                                 x:Class="SpecLens.Avalonia.Views.QueryTabView"
                                 x:DataType="vm:QueryTabViewModel"
@@ -275,7 +276,7 @@
                             <Run Text="{Binding RowCount}" />
                         </TextBlock>
                     </StackPanel>
-                    
+
                     <Button Command="{Binding RunQueryCommand}"
                             Classes="query-action"
                             Width="34"
@@ -449,4 +450,4 @@
             </StackPanel>
         </Border>
     </Grid>
-</reactiveui:ReactiveUserControl>
+</avalonia:ReactiveUserControl>

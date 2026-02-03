@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reactive;
 using System.Reactive.Linq;
 using System.Reactive.Disposables;
+using System.Reactive.Disposables.Fluent;
 using Avalonia.Media;
 using ReactiveUI;
 using SpecLens.Avalonia.Models;

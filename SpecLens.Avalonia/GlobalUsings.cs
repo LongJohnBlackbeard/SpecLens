@@ -1,1 +1,1 @@
-global using System.Reactive.Disposables.Fluent;
+global using System.Reactive.Disposables;
