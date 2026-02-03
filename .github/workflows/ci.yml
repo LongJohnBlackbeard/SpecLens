@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
 
@@ -41,7 +41,7 @@ jobs:
         run: reportgenerator -reports:"TestResults/coverage/coverage.cobertura.xml" -targetdir:"TestResults/coverage-report" -reporttypes:"HtmlInline;Cobertura;TextSummary;MarkdownSummary"
 
       - name: Upload Coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: TestResults/coverage/coverage.cobertura.xml
           fail_ci_if_error: false
@@ -51,7 +51,7 @@ jobs:
         run: Get-Content TestResults/coverage-report/Summary.md | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
       - name: Upload Coverage Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-report
           path: TestResults/coverage-report
