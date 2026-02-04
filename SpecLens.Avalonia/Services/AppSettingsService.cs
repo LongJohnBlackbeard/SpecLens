@@ -34,6 +34,7 @@ public sealed class AppSettings
     public string EventRulesEqualsColor { get; set; } = EventRulesSyntaxTheme.DefaultEqualsColor;
     public string EventRulesDefaultTextColor { get; set; } = EventRulesSyntaxTheme.DefaultTextColor;
     public string EventRulesEditorBackgroundColor { get; set; } = EventRulesSyntaxTheme.DefaultEditorBackgroundColor;
+    public string EventRulesStringColor { get; set; } = EventRulesSyntaxTheme.DefaultStringColor;
 }
 
 public interface IAppSettingsService

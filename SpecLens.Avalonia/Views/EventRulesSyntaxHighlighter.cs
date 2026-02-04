@@ -393,6 +393,7 @@ internal sealed class EventRulesSyntaxHighlighter : DocumentColorizingTransforme
     private static IBrush InputBrush => EventRulesSyntaxTheme.InputBrush;
     private static IBrush OutputBrush => EventRulesSyntaxTheme.OutputBrush;
     private static IBrush EqualsBrush => EventRulesSyntaxTheme.EqualsBrush;
+    private static IBrush StringBrush => EventRulesSyntaxTheme.StringBrush;
     private static IBrush DefaultTextBrush => EventRulesSyntaxTheme.DefaultTextBrush;
 
     protected override void ColorizeLine(DocumentLine line)
@@ -442,6 +443,8 @@ internal sealed class EventRulesSyntaxHighlighter : DocumentColorizingTransforme
             }
         }
 
+        ApplyStringForeground(text, lineOffset);
+
         foreach (var link in EventRulesTextClassifier.GetLinks(text, lineOffset))
         {
             ChangeLinePart(link.StartOffset, link.StartOffset + link.Length, element =>
@@ -455,6 +458,89 @@ internal sealed class EventRulesSyntaxHighlighter : DocumentColorizingTransforme
     private void ApplyForeground(int startOffset, int endOffset, IBrush brush)
     {
         ChangeLinePart(startOffset, endOffset, element => element.TextRunProperties.SetForegroundBrush(brush));
+    }
+
+    private void ApplyStringForeground(string text, int lineOffset)
+    {
+        foreach (var span in GetStringSpans(text))
+        {
+            ApplyForeground(lineOffset + span.Start, lineOffset + span.Start + span.Length, StringBrush);
+        }
+    }
+
+    private static IEnumerable<(int Start, int Length)> GetStringSpans(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            yield break;
+        }
+
+        bool inString = false;
+        char quoteChar = '\0';
+        int start = -1;
+
+        for (int i = 0; i < text.Length; i++)
+        {
+            char ch = text[i];
+            if (!inString)
+            {
+                if (ch == '"' || ch == '\'')
+                {
+                    inString = true;
+                    quoteChar = ch;
+                    start = i;
+                }
+
+                continue;
+            }
+
+            if (ch != quoteChar)
+            {
+                continue;
+            }
+
+            if (i + 1 < text.Length && text[i + 1] == quoteChar)
+            {
+                i++;
+                continue;
+            }
+
+            if (IsBackslashEscaped(text, i))
+            {
+                continue;
+            }
+
+            int length = i - start + 1;
+            if (length > 0)
+            {
+                yield return (start, length);
+            }
+
+            inString = false;
+            quoteChar = '\0';
+            start = -1;
+        }
+
+        if (inString && start >= 0)
+        {
+            yield return (start, text.Length - start);
+        }
+    }
+
+    private static bool IsBackslashEscaped(string text, int index)
+    {
+        int backslashes = 0;
+        for (int i = index - 1; i >= 0; i--)
+        {
+            if (text[i] != '\\')
+            {
+                break;
+            }
+
+            backslashes++;
+        }
+
+        return backslashes % 2 == 1;
     }
 
     private static bool IsTableIoEqualsLine(TextDocument document, DocumentLine line, string text)

@@ -14,6 +14,7 @@ public static class EventRulesSyntaxTheme
     public const string DefaultEqualsColor = "#EF6C00";
     public const string DefaultTextColor = "#1F1F1F";
     public const string DefaultEditorBackgroundColor = "#FFFFFF";
+    public const string DefaultStringColor = "#C62828";
 
     private static readonly SolidColorBrush CommentBrushInternal = new(Color.Parse(DefaultCommentColor));
     private static readonly SolidColorBrush LinkBrushInternal = new(Color.Parse(DefaultLinkColor));
@@ -23,6 +24,7 @@ public static class EventRulesSyntaxTheme
     private static readonly SolidColorBrush EqualsBrushInternal = new(Color.Parse(DefaultEqualsColor));
     private static readonly SolidColorBrush DefaultTextBrushInternal = new(Color.Parse(DefaultTextColor));
     private static readonly SolidColorBrush EditorBackgroundBrushInternal = new(Color.Parse(DefaultEditorBackgroundColor));
+    private static readonly SolidColorBrush StringBrushInternal = new(Color.Parse(DefaultStringColor));
 
     public static event EventHandler? ThemeChanged;
 
@@ -34,6 +36,7 @@ public static class EventRulesSyntaxTheme
     public static IBrush EqualsBrush => EqualsBrushInternal;
     public static IBrush DefaultTextBrush => DefaultTextBrushInternal;
     public static IBrush EditorBackgroundBrush => EditorBackgroundBrushInternal;
+    public static IBrush StringBrush => StringBrushInternal;
 
     public static void Apply(AppSettings settings)
     {
@@ -50,6 +53,7 @@ public static class EventRulesSyntaxTheme
         UpdateBrush(EqualsBrushInternal, settings.EventRulesEqualsColor, DefaultEqualsColor);
         UpdateBrush(DefaultTextBrushInternal, settings.EventRulesDefaultTextColor, DefaultTextColor);
         UpdateBrush(EditorBackgroundBrushInternal, settings.EventRulesEditorBackgroundColor, DefaultEditorBackgroundColor);
+        UpdateBrush(StringBrushInternal, settings.EventRulesStringColor, DefaultStringColor);
 
         ThemeChanged?.Invoke(null, EventArgs.Empty);
     }
@@ -58,15 +62,17 @@ public static class EventRulesSyntaxTheme
     {
         if (mode == AppThemeMode.Dark)
         {
-        return new EventRulesSyntaxDefaults(
-            Comment: Color.Parse("#7BC77B"),
-            Link: Color.Parse("#7AB9F5"),
-            Pipe: Color.Parse("#9AA0A6"),
-            Input: Color.Parse("#F28B82"),
-            Output: Color.Parse("#8AB4F8"),
-            EqualsColor: Color.Parse("#F6A04D"),
-            DefaultText: Color.Parse("#E6E6E6"),
-            Background: Color.Parse("#1B1F24"));
+            return new EventRulesSyntaxDefaults(
+                Comment: Color.Parse("#7BC77B"),
+                Link: Color.Parse("#7AB9F5"),
+                Pipe: Color.Parse("#9AA0A6"),
+                Input: Color.Parse("#F28B82"),
+                Output: Color.Parse("#8AB4F8"),
+                EqualsColor: Color.Parse("#F6A04D"),
+                DefaultText: Color.Parse("#E6E6E6"),
+                Background: Color.Parse("#1B1F24"),
+                String: Color.Parse("#F28B82")
+                );
         }
 
         return new EventRulesSyntaxDefaults(
@@ -77,7 +83,8 @@ public static class EventRulesSyntaxTheme
             Output: Color.Parse(DefaultOutputColor),
             EqualsColor: Color.Parse(DefaultEqualsColor),
             DefaultText: Color.Parse(DefaultTextColor),
-            Background: Color.Parse(DefaultEditorBackgroundColor));
+            Background: Color.Parse(DefaultEditorBackgroundColor),
+            String: Color.Parse(DefaultStringColor));
     }
 
     public static Color ParseColor(string? value, string fallback)
@@ -114,4 +121,5 @@ public readonly record struct EventRulesSyntaxDefaults(
     Color Output,
     Color EqualsColor,
     Color DefaultText,
-    Color Background);
+    Color Background,
+    Color String);
