@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using ReactiveUI;
+using Serilog;
 using JdeClient.Core.Models;
 
 namespace SpecLens.Avalonia.Services;
@@ -374,8 +375,9 @@ public sealed partial class DataDictionaryInfoService : ReactiveObject, IDataDic
             AutoInclude = NormalizeFlag(overrides?.AutoInclude);
             DoNotTotal = NormalizeFlag(overrides?.DoNotTotal);
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Warning(ex, "Failed to load data dictionary details for selection");
         }
         finally
         {

@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core;
@@ -93,9 +94,9 @@ public partial class App : Application
                 Log.CloseAndFlush();
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Swallow to avoid crash during shutdown
+            Trace.TraceWarning("Failed during shutdown cleanup. {0}", ex);
         }
     }
 

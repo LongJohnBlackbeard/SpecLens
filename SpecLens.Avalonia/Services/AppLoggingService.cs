@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Reflection;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using ReactiveUI;
@@ -142,8 +143,9 @@ public sealed class AppLoggingService : ReactiveObject, IAppLoggingService, IDis
                 .WriteTo.File(new CompactJsonFormatter(), path, rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14, shared: true)
                 .CreateLogger();
         }
-        catch
+        catch (Exception ex)
         {
+            Trace.TraceError("Failed to configure app logging. {0}", ex);
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.ControlledBy(LevelSwitch)
                 .CreateLogger();
@@ -167,8 +169,9 @@ public sealed class AppLoggingService : ReactiveObject, IAppLoggingService, IDis
                 .WriteTo.File(new CompactJsonFormatter(), path, rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14, shared: true)
                 .CreateLogger();
         }
-        catch
+        catch (Exception ex)
         {
+            Trace.TraceError("Failed to configure client logging. {0}", ex);
             return new LoggerConfiguration()
                 .MinimumLevel.Fatal()
                 .CreateLogger();
@@ -187,9 +190,9 @@ public sealed class AppLoggingService : ReactiveObject, IAppLoggingService, IDis
         {
             _clientLogger.Information("{Message}", sanitized);
         }
-        catch
+        catch (Exception ex)
         {
-            // Swallow to avoid logging failures from impacting runtime behavior.
+            Trace.TraceError("Failed to write client log message. {0}", ex);
         }
     }
 
@@ -202,8 +205,9 @@ public sealed class AppLoggingService : ReactiveObject, IAppLoggingService, IDis
             sanitized = ValuePattern.Replace(sanitized, "$1<redacted>");
             return sanitized;
         }
-        catch
+        catch (Exception ex)
         {
+            Trace.TraceWarning("Failed to sanitize client log message. {0}", ex);
             return "<redacted>";
         }
     }
@@ -218,9 +222,9 @@ public sealed class AppLoggingService : ReactiveObject, IAppLoggingService, IDis
                 Directory.CreateDirectory(directory);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Swallow to avoid failing app startup on logging setup.
+            Trace.TraceWarning("Failed to ensure log directory. {0}", ex);
         }
     }
 

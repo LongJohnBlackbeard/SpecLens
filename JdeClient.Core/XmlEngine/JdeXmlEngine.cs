@@ -149,6 +149,10 @@ public partial class JdeXmlEngine
                 var assignment = HandleGBRASSIGN(xmlEventRuleBlock);
                 AddIndentedLine(assignment);
                 break;
+            case "GBRSLBF":
+                var text = HandleGBRSLBF(xmlEventRuleBlock);
+                AddIndentedLine(text);
+                break;
             case "GBROPTIONS":
                 // Not implemented yet. Keep for future investigation.
                 break;

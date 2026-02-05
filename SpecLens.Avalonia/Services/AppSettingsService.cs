@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Diagnostics;
 using System.Text.Json;
 using Avalonia.Controls;
 using JdeClient.Core.Models;
@@ -98,9 +99,9 @@ public sealed class AppSettingsService : IAppSettingsService
             string payload = JsonSerializer.Serialize(Current, JsonOptions);
             File.WriteAllText(settingsPath, payload);
         }
-        catch
+        catch (Exception ex)
         {
-            // Swallow to avoid crashing on settings write failures.
+            Trace.TraceWarning("Failed to save settings. {0}", ex);
         }
     }
 
@@ -116,8 +117,9 @@ public sealed class AppSettingsService : IAppSettingsService
             string payload = File.ReadAllText(settingsPath);
             return JsonSerializer.Deserialize<AppSettings>(payload, JsonOptions) ?? new AppSettings();
         }
-        catch
+        catch (Exception ex)
         {
+            Trace.TraceWarning("Failed to load settings. {0}", ex);
             return new AppSettings();
         }
     }

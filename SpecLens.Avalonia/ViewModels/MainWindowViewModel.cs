@@ -29,13 +29,19 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
     }
 
     private const ObjectAction DefaultObjectActions = ObjectAction.Specs | ObjectAction.Query;
+    private static readonly ObjectAction[] DefaultActionOrder =
+    {
+        ObjectAction.Specs,
+        ObjectAction.Query,
+        ObjectAction.EventRules
+    };
 
     private static readonly IReadOnlyDictionary<string, ObjectAction> ObjectTypeActions
         = new Dictionary<string, ObjectAction>(StringComparer.OrdinalIgnoreCase)
         {
             ["TBLE"] = DefaultObjectActions,
             ["BSVW"] = DefaultObjectActions,
-            ["BSFN"] = DefaultObjectActions | ObjectAction.EventRules,
+            ["BSFN"] = ObjectAction.EventRules,
             ["UBE"] = ObjectAction.EventRules,
             ["APPL"] = ObjectAction.None,
             ["DSTR"] = ObjectAction.None,
@@ -112,7 +118,9 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         OpenSpecsForObjectCommand = ReactiveCommand.CreateFromTask<JdeObjectInfo?>(OpenSpecsForObjectAsync, canOpenSpecsForObject);
         OpenQueryForObjectCommand = ReactiveCommand.CreateFromTask<JdeObjectInfo?>(OpenQueryForObjectAsync, canOpenSpecsForObject);
         OpenEventRulesForObjectCommand = ReactiveCommand.CreateFromTask<JdeObjectInfo?>(OpenEventRulesForObjectAsync, canOpenSpecsForObject);
-        DefaultOpenCommand = ReactiveCommand.CreateFromTask<JdeObjectInfo?>(OpenDefaultAsync, canOpenSpecsForObject);
+        var canDefaultOpen = this.WhenAnyValue(x => x.IsConnected, x => x.SelectedObject,
+            (connected, selected) => connected && TryGetDefaultAction(selected, out _));
+        DefaultOpenCommand = ReactiveCommand.CreateFromTask<JdeObjectInfo?>(OpenDefaultAsync, canDefaultOpen);
 
         this.WhenActivated(disposables =>
         {
@@ -315,6 +323,8 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
     public ReactiveCommand<JdeObjectInfo?, Unit> OpenEventRulesForObjectCommand { get; }
     public ReactiveCommand<JdeObjectInfo?, Unit> DefaultOpenCommand { get; }
 
+    public IAppSettingsService SettingsService => _settingsService;
+
     private async Task ConnectAsync()
     {
         try
@@ -324,7 +334,6 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         catch (Exception ex)
         {
             await RunOnUiThreadAsync(() => StatusMessage = ex.Message);
-            Log.Error(ex, "Failed to connect to JDE");
         }
     }
 
@@ -503,7 +512,7 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
 
         return RunOnUiThreadAsync(() =>
         {
-            var tab = new SpecsTabViewModel(jdeObject, _connectionService)
+            var tab = new SpecsTabViewModel(jdeObject, _connectionService, _dataDictionaryInfoService)
             {
                 Header = $"{jdeObject.ObjectName} - Specs"
             };
@@ -541,7 +550,7 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         return RunOnUiThreadAsync(() =>
         {
             bool isBusinessView = string.Equals(jdeObject.ObjectType?.Trim(), "BSVW", StringComparison.OrdinalIgnoreCase);
-            var tab = new QueryTabViewModel(jdeObject.ObjectName, _connectionService, _settingsService, isBusinessView)
+            var tab = new QueryTabViewModel(jdeObject.ObjectName, _connectionService, _settingsService, _dataDictionaryInfoService, isBusinessView)
             {
                 Header = $"{jdeObject.ObjectName} - Query"
             };
@@ -589,7 +598,7 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         var jdeObject = new JdeObjectInfo
         {
             ObjectName = objectName,
-            ObjectType = "NER"
+            ObjectType = "BSFN"
         };
 
         return OpenEventRulesForObjectAsync(jdeObject, functionName);
@@ -597,12 +606,18 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
 
     private Task OpenDefaultAsync(JdeObjectInfo? jdeObject)
     {
-        if (jdeObject == null)
+        if (!TryGetDefaultAction(jdeObject, out var action))
         {
             return Task.CompletedTask;
         }
 
-        return OpenSpecsForObjectAsync(jdeObject);
+        return action switch
+        {
+            ObjectAction.Specs => OpenSpecsForObjectAsync(jdeObject),
+            ObjectAction.Query => OpenQueryForObjectAsync(jdeObject),
+            ObjectAction.EventRules => OpenEventRulesForObjectAsync(jdeObject),
+            _ => Task.CompletedTask
+        };
     }
 
     private static bool IsQueryable(JdeObjectInfo jdeObject)
@@ -631,6 +646,27 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         return ObjectTypeActions.TryGetValue(type, out var actions)
             ? actions
             : DefaultObjectActions;
+    }
+
+    private static bool TryGetDefaultAction(JdeObjectInfo? jdeObject, out ObjectAction action)
+    {
+        action = ObjectAction.None;
+        if (jdeObject == null)
+        {
+            return false;
+        }
+
+        var available = GetObjectActions(jdeObject);
+        foreach (var candidate in DefaultActionOrder)
+        {
+            if ((available & candidate) != 0)
+            {
+                action = candidate;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task<JdeObjectInfo?> ResolveSpecObjectAsync(string objectName)

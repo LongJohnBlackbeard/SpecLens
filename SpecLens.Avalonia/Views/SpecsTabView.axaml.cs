@@ -72,9 +72,13 @@ public partial class SpecsTabView : ReactiveUserControl<SpecsTabViewModel>
             }
 
             _viewModel = viewModel;
-            _ddInfoService ??= App.GetService<IDataDictionaryInfoService>();
+            _ddInfoService = viewModel.DataDictionaryInfo;
 
-            Disposable.Create(() => _viewModel = null).DisposeWith(disposables);
+            Disposable.Create(() =>
+            {
+                _viewModel = null;
+                _ddInfoService = null;
+            }).DisposeWith(disposables);
         });
         AttachedToVisualTree += OnAttachedToVisualTree;
         DetachedFromVisualTree += OnDetachedFromVisualTree;
