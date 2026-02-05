@@ -35,8 +35,9 @@ sealed class Program
             var principal = new WindowsPrincipal(identity);
             return principal.IsInRole(WindowsBuiltInRole.Administrator);
         }
-        catch
+        catch (Exception ex)
         {
+            Trace.TraceWarning("Failed to determine elevation status. {0}", ex);
             return false;
         }
     }
@@ -67,9 +68,9 @@ sealed class Program
             };
             Process.Start(startInfo);
         }
-        catch
+        catch (Exception ex)
         {
-            // User likely canceled UAC prompt; just exit.
+            Trace.TraceWarning("Failed to restart with elevation. {0}", ex);
         }
     }
 

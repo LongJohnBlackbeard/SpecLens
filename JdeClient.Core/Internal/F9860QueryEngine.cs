@@ -424,7 +424,6 @@ internal class F9860QueryEngine : IF9860QueryEngine
         LogValue(log, "Unicode", uniValue);
         return uniValue;
     }
-
     internal static string ReadAnsiValue(IntPtr valuePtr, Action<string>? log)
     {
         string ansiValue = Marshal.PtrToStringAnsi(valuePtr) ?? string.Empty;
@@ -441,12 +440,12 @@ internal class F9860QueryEngine : IF9860QueryEngine
         {
             JdeObjectType.Table => typeString.Equals(ObjectTypes.Table, StringComparison.OrdinalIgnoreCase),
             JdeObjectType.BusinessFunction => typeString.Equals(ObjectTypes.BusinessFunction, StringComparison.OrdinalIgnoreCase),
-            JdeObjectType.NamedEventRule => typeString.Equals(ObjectTypes.NamedEventRule, StringComparison.OrdinalIgnoreCase),
+            JdeObjectType.BusinessFunctionLibrary => typeString.Equals(ObjectTypes.BusinessFunctionLibrary, StringComparison.OrdinalIgnoreCase),
             JdeObjectType.Report => typeString.Equals(ObjectTypes.Report, StringComparison.OrdinalIgnoreCase),
             JdeObjectType.Application => typeString.Equals(ObjectTypes.Application, StringComparison.OrdinalIgnoreCase),
             JdeObjectType.DataStructure => typeString.Equals(ObjectTypes.DataStructure, StringComparison.OrdinalIgnoreCase),
+            JdeObjectType.MediaObjectDataStructure => typeString.Equals(ObjectTypes.MediaObjectDataStructure, StringComparison.OrdinalIgnoreCase),
             JdeObjectType.BusinessView => typeString.Equals(ObjectTypes.BusinessView, StringComparison.OrdinalIgnoreCase),
-            JdeObjectType.DataDictionary => typeString.Equals(ObjectTypes.DataDictionary, StringComparison.OrdinalIgnoreCase),
             JdeObjectType.All => true,
             _ => false
         };
@@ -598,12 +597,12 @@ internal class F9860QueryEngine : IF9860QueryEngine
         {
             JdeObjectType.Table => SetTypeCode(ObjectTypes.Table, out typeCode),
             JdeObjectType.BusinessFunction => SetTypeCode(ObjectTypes.BusinessFunction, out typeCode),
-            JdeObjectType.NamedEventRule => SetTypeCode(ObjectTypes.NamedEventRule, out typeCode),
+            JdeObjectType.BusinessFunctionLibrary => SetTypeCode(ObjectTypes.BusinessFunctionLibrary, out typeCode),
             JdeObjectType.Report => SetTypeCode(ObjectTypes.Report, out typeCode),
             JdeObjectType.Application => SetTypeCode(ObjectTypes.Application, out typeCode),
             JdeObjectType.DataStructure => SetTypeCode(ObjectTypes.DataStructure, out typeCode),
+            JdeObjectType.MediaObjectDataStructure => SetTypeCode(ObjectTypes.MediaObjectDataStructure, out typeCode),
             JdeObjectType.BusinessView => SetTypeCode(ObjectTypes.BusinessView, out typeCode),
-            JdeObjectType.DataDictionary => SetTypeCode(ObjectTypes.DataDictionary, out typeCode),
             _ => false
         };
     }
@@ -902,4 +901,3 @@ internal class F9860QueryEngine : IF9860QueryEngine
         _disposed = true;
     }
 }
-

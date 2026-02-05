@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -988,9 +989,11 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
         }
         catch (OperationCanceledException)
         {
+            return;
         }
-        catch
+        catch (Exception ex)
         {
+            Trace.TraceWarning("ViewportGrid block fetch failed. {0}", ex);
         }
     }
 

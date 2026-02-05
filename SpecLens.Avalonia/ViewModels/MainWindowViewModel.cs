@@ -19,6 +19,34 @@ namespace SpecLens.Avalonia.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
 {
+    [Flags]
+    private enum ObjectAction
+    {
+        None = 0,
+        Specs = 1,
+        Query = 2,
+        EventRules = 4
+    }
+
+    private const ObjectAction DefaultObjectActions = ObjectAction.Specs | ObjectAction.Query;
+    private static readonly ObjectAction[] DefaultActionOrder =
+    {
+        ObjectAction.Specs,
+        ObjectAction.Query,
+        ObjectAction.EventRules
+    };
+
+    private static readonly IReadOnlyDictionary<string, ObjectAction> ObjectTypeActions
+        = new Dictionary<string, ObjectAction>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["TBLE"] = DefaultObjectActions,
+            ["BSVW"] = DefaultObjectActions,
+            ["BSFN"] = ObjectAction.EventRules,
+            ["UBE"] = ObjectAction.EventRules,
+            ["APPL"] = ObjectAction.None,
+            ["DSTR"] = ObjectAction.None,
+        };
+
     private readonly IJdeConnectionService _connectionService;
     private readonly IAppSettingsService _settingsService;
     private readonly IDataDictionaryInfoService _dataDictionaryInfoService;
@@ -71,16 +99,16 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
             (connected, searching) => connected && !searching);
         SearchCommand = ReactiveCommand.CreateFromTask(SearchAsync, canSearch);
 
-        var canOpenSpecs = this.WhenAnyValue(x => x.IsConnected, x => x.HasSelection,
-            (connected, hasSelection) => connected && hasSelection);
+        var canOpenSpecs = this.WhenAnyValue(x => x.IsConnected, x => x.SelectedObject,
+            (connected, selected) => connected && IsActionAllowed(selected, ObjectAction.Specs));
         OpenSpecsCommand = ReactiveCommand.CreateFromTask(OpenSpecsAsync, canOpenSpecs);
 
         var canOpenQuery = this.WhenAnyValue(x => x.IsConnected, x => x.SelectedObject,
-            (connected, selected) => connected && selected != null && IsQueryable(selected));
+            (connected, selected) => connected && IsActionAllowed(selected, ObjectAction.Query));
         OpenQueryCommand = ReactiveCommand.CreateFromTask(OpenQueryAsync, canOpenQuery);
 
         var canOpenEventRules = this.WhenAnyValue(x => x.IsConnected, x => x.SelectedObject,
-            (connected, selected) => connected && selected != null);
+            (connected, selected) => connected && IsActionAllowed(selected, ObjectAction.EventRules));
         OpenEventRulesCommand = ReactiveCommand.CreateFromTask(OpenEventRulesAsync, canOpenEventRules);
 
         CloseTabCommand = ReactiveCommand.Create<WorkspaceTabViewModel?>(CloseTab);
@@ -90,7 +118,9 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         OpenSpecsForObjectCommand = ReactiveCommand.CreateFromTask<JdeObjectInfo?>(OpenSpecsForObjectAsync, canOpenSpecsForObject);
         OpenQueryForObjectCommand = ReactiveCommand.CreateFromTask<JdeObjectInfo?>(OpenQueryForObjectAsync, canOpenSpecsForObject);
         OpenEventRulesForObjectCommand = ReactiveCommand.CreateFromTask<JdeObjectInfo?>(OpenEventRulesForObjectAsync, canOpenSpecsForObject);
-        DefaultOpenCommand = ReactiveCommand.CreateFromTask<JdeObjectInfo?>(OpenDefaultAsync, canOpenSpecsForObject);
+        var canDefaultOpen = this.WhenAnyValue(x => x.IsConnected, x => x.SelectedObject,
+            (connected, selected) => connected && TryGetDefaultAction(selected, out _));
+        DefaultOpenCommand = ReactiveCommand.CreateFromTask<JdeObjectInfo?>(OpenDefaultAsync, canDefaultOpen);
 
         this.WhenActivated(disposables =>
         {
@@ -293,6 +323,8 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
     public ReactiveCommand<JdeObjectInfo?, Unit> OpenEventRulesForObjectCommand { get; }
     public ReactiveCommand<JdeObjectInfo?, Unit> DefaultOpenCommand { get; }
 
+    public IAppSettingsService SettingsService => _settingsService;
+
     private async Task ConnectAsync()
     {
         try
@@ -302,7 +334,6 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         catch (Exception ex)
         {
             await RunOnUiThreadAsync(() => StatusMessage = ex.Message);
-            Log.Error(ex, "Failed to connect to JDE");
         }
     }
 
@@ -474,14 +505,14 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
 
     private Task OpenSpecsForObjectAsync(JdeObjectInfo? jdeObject)
     {
-        if (jdeObject == null)
+        if (jdeObject == null || !IsActionAllowed(jdeObject, ObjectAction.Specs))
         {
             return Task.CompletedTask;
         }
 
         return RunOnUiThreadAsync(() =>
         {
-            var tab = new SpecsTabViewModel(jdeObject, _connectionService)
+            var tab = new SpecsTabViewModel(jdeObject, _connectionService, _dataDictionaryInfoService)
             {
                 Header = $"{jdeObject.ObjectName} - Specs"
             };
@@ -511,7 +542,7 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
 
     private Task OpenQueryForObjectAsync(JdeObjectInfo? jdeObject)
     {
-        if (jdeObject == null || !IsQueryable(jdeObject))
+        if (jdeObject == null || !IsActionAllowed(jdeObject, ObjectAction.Query))
         {
             return Task.CompletedTask;
         }
@@ -519,7 +550,7 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         return RunOnUiThreadAsync(() =>
         {
             bool isBusinessView = string.Equals(jdeObject.ObjectType?.Trim(), "BSVW", StringComparison.OrdinalIgnoreCase);
-            var tab = new QueryTabViewModel(jdeObject.ObjectName, _connectionService, _settingsService, isBusinessView)
+            var tab = new QueryTabViewModel(jdeObject.ObjectName, _connectionService, _settingsService, _dataDictionaryInfoService, isBusinessView)
             {
                 Header = $"{jdeObject.ObjectName} - Query"
             };
@@ -539,7 +570,7 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         JdeObjectInfo? jdeObject,
         string? initialFunctionName)
     {
-        if (jdeObject == null)
+        if (jdeObject == null || !IsActionAllowed(jdeObject, ObjectAction.EventRules))
         {
             return Task.CompletedTask;
         }
@@ -567,7 +598,7 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         var jdeObject = new JdeObjectInfo
         {
             ObjectName = objectName,
-            ObjectType = "NER"
+            ObjectType = "BSFN"
         };
 
         return OpenEventRulesForObjectAsync(jdeObject, functionName);
@@ -575,19 +606,67 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
 
     private Task OpenDefaultAsync(JdeObjectInfo? jdeObject)
     {
-        if (jdeObject == null)
+        if (!TryGetDefaultAction(jdeObject, out var action))
         {
             return Task.CompletedTask;
         }
 
-        return OpenSpecsForObjectAsync(jdeObject);
+        return action switch
+        {
+            ObjectAction.Specs => OpenSpecsForObjectAsync(jdeObject),
+            ObjectAction.Query => OpenQueryForObjectAsync(jdeObject),
+            ObjectAction.EventRules => OpenEventRulesForObjectAsync(jdeObject),
+            _ => Task.CompletedTask
+        };
     }
 
     private static bool IsQueryable(JdeObjectInfo jdeObject)
     {
+        return IsActionAllowed(jdeObject, ObjectAction.Query);
+    }
+
+    private static bool IsActionAllowed(JdeObjectInfo? jdeObject, ObjectAction action)
+    {
+        if (jdeObject == null)
+        {
+            return false;
+        }
+
+        return (GetObjectActions(jdeObject) & action) != 0;
+    }
+
+    private static ObjectAction GetObjectActions(JdeObjectInfo jdeObject)
+    {
         string? type = jdeObject.ObjectType?.Trim();
-        return string.Equals(type, "TBLE", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(type, "BSVW", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return DefaultObjectActions;
+        }
+
+        return ObjectTypeActions.TryGetValue(type, out var actions)
+            ? actions
+            : DefaultObjectActions;
+    }
+
+    private static bool TryGetDefaultAction(JdeObjectInfo? jdeObject, out ObjectAction action)
+    {
+        action = ObjectAction.None;
+        if (jdeObject == null)
+        {
+            return false;
+        }
+
+        var available = GetObjectActions(jdeObject);
+        foreach (var candidate in DefaultActionOrder)
+        {
+            if ((available & candidate) != 0)
+            {
+                action = candidate;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task<JdeObjectInfo?> ResolveSpecObjectAsync(string objectName)
@@ -693,14 +772,14 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         return new List<ObjectTypeOption>
         {
             new("All", JdeObjectType.All),
-            new("Table (TBLE)", JdeObjectType.Table),
-            new("Business Function (BSFN)", JdeObjectType.BusinessFunction),
-            new("Named Event Rule (NER)", JdeObjectType.NamedEventRule),
-            new("Report (UBE)", JdeObjectType.Report),
-            new("Application (APPL)", JdeObjectType.Application),
-            new("Data Structure (DSTR)", JdeObjectType.DataStructure),
+            new("Interactive Application (APPL)", JdeObjectType.Application),
+            new("Business Function Library (BL)", JdeObjectType.BusinessFunctionLibrary),
+            new("Business Function Module (BSFN)", JdeObjectType.BusinessFunction),
             new("Business View (BSVW)", JdeObjectType.BusinessView),
-            new("Data Dictionary (DD)", JdeObjectType.DataDictionary)
+            new("Data Structure (DSTR)", JdeObjectType.DataStructure),
+            new("Media Object Data Structure (GT)", JdeObjectType.MediaObjectDataStructure),
+            new("Table Definition (TBLE)", JdeObjectType.Table),
+            new("Batch Application (UBE)", JdeObjectType.Report)
         };
     }
 }

@@ -27,6 +27,7 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
     private Color _eventRulesLinkColor;
     private Color _eventRulesPipeColor;
     private Color _eventRulesInputColor;
+    private Color _eventRulesStringColor;
     private Color _eventRulesOutputColor;
     private Color _eventRulesEqualsColor;
     private Color _eventRulesDefaultTextColor;
@@ -55,6 +56,9 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
         EventRulesInputColor = EventRulesSyntaxTheme.ParseColor(
             settingsService.Current.EventRulesInputColor,
             EventRulesSyntaxTheme.DefaultInputColor);
+        EventRulesStringColor = EventRulesSyntaxTheme.ParseColor(
+            settingsService.Current.EventRulesStringColor,
+            EventRulesSyntaxTheme.DefaultStringColor);
         EventRulesOutputColor = EventRulesSyntaxTheme.ParseColor(
             settingsService.Current.EventRulesOutputColor,
             EventRulesSyntaxTheme.DefaultOutputColor);
@@ -173,6 +177,12 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
     {
         get => _eventRulesInputColor;
         set => this.RaiseAndSetIfChanged(ref _eventRulesInputColor, value);
+    }
+
+    public Color EventRulesStringColor
+    {
+        get => _eventRulesStringColor;
+        set => this.RaiseAndSetIfChanged(ref _eventRulesStringColor, value);
     }
 
     public Color EventRulesOutputColor
@@ -299,6 +309,14 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
             EventRulesInputColor = inputColor;
         }
 
+        var stringColor = EventRulesSyntaxTheme.ParseColor(
+            _settingsService.Current.EventRulesStringColor,
+            EventRulesSyntaxTheme.DefaultStringColor);
+        if (EventRulesStringColor != stringColor)
+        {
+            EventRulesStringColor = stringColor;
+        }
+
         var outputColor = EventRulesSyntaxTheme.ParseColor(
             _settingsService.Current.EventRulesOutputColor,
             EventRulesSyntaxTheme.DefaultOutputColor);
@@ -347,6 +365,7 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
             EventRulesLinkColor = defaults.Link;
             EventRulesPipeColor = defaults.Pipe;
             EventRulesInputColor = defaults.Input;
+            EventRulesStringColor = defaults.String;
             EventRulesOutputColor = defaults.Output;
             EventRulesEqualsColor = defaults.EqualsColor;
             EventRulesDefaultTextColor = defaults.DefaultText;
@@ -371,6 +390,7 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
             settings.EventRulesLinkColor = EventRulesSyntaxTheme.ToHex(EventRulesLinkColor);
             settings.EventRulesPipeColor = EventRulesSyntaxTheme.ToHex(EventRulesPipeColor);
             settings.EventRulesInputColor = EventRulesSyntaxTheme.ToHex(EventRulesInputColor);
+            settings.EventRulesStringColor = EventRulesSyntaxTheme.ToHex(EventRulesStringColor);
             settings.EventRulesOutputColor = EventRulesSyntaxTheme.ToHex(EventRulesOutputColor);
             settings.EventRulesEqualsColor = EventRulesSyntaxTheme.ToHex(EventRulesEqualsColor);
             settings.EventRulesDefaultTextColor = EventRulesSyntaxTheme.ToHex(EventRulesDefaultTextColor);

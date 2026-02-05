@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Reactive.Linq;
 using System.Reactive.Disposables;
@@ -56,7 +57,7 @@ public partial class QueryTabView : ReactiveUserControl<QueryTabViewModel>
     private Border? _dragGuideLine;
     private Control? _resizeHeaderControl;
     private Control? _dragHeaderControl;
-    private DateTime _lastScrollChange;
+    private long _lastScrollChangeTimestamp = Stopwatch.GetTimestamp();
     private bool _isSnapping;
     private double _lastHorizontalOffset;
     private const double SnapDelayMs = 140;
@@ -90,7 +91,7 @@ public partial class QueryTabView : ReactiveUserControl<QueryTabViewModel>
             }
 
             _viewModel = viewModel;
-            _ddInfoService ??= App.GetService<IDataDictionaryInfoService>();
+            _ddInfoService = viewModel.DataDictionaryInfo;
 
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             Disposable.Create(() => _viewModel.PropertyChanged -= OnViewModelPropertyChanged)
@@ -110,6 +111,7 @@ public partial class QueryTabView : ReactiveUserControl<QueryTabViewModel>
             {
                 DetachViewportGrid();
                 _viewModel = null;
+                _ddInfoService = null;
             }).DisposeWith(disposables);
         });
         AttachedToVisualTree += OnAttachedToVisualTree;
@@ -938,7 +940,7 @@ public partial class QueryTabView : ReactiveUserControl<QueryTabViewModel>
         }
 
         _queryGrid = grid;
-        _lastScrollChange = DateTime.UtcNow;
+        _lastScrollChangeTimestamp = Stopwatch.GetTimestamp();
         grid.TemplateApplied += OnQueryGridTemplateApplied;
         grid.LayoutUpdated += OnQueryGridLayoutUpdated;
         Dispatcher.UIThread.Post(() => AttachScrollViewer(grid), DispatcherPriority.Loaded);
@@ -1136,7 +1138,7 @@ public partial class QueryTabView : ReactiveUserControl<QueryTabViewModel>
             }
 
             _lastHorizontalOffset = offsetX;
-            _lastScrollChange = DateTime.UtcNow;
+            _lastScrollChangeTimestamp = Stopwatch.GetTimestamp();
             EnsureSnapTimer();
             _snapTimer?.Stop();
             _snapTimer?.Start();
@@ -1167,7 +1169,7 @@ public partial class QueryTabView : ReactiveUserControl<QueryTabViewModel>
         }
 
         _lastHorizontalOffset = currentOffsetX;
-        _lastScrollChange = DateTime.UtcNow;
+        _lastScrollChangeTimestamp = Stopwatch.GetTimestamp();
         EnsureSnapTimer();
         _snapTimer?.Stop();
         _snapTimer?.Start();
@@ -1197,7 +1199,7 @@ public partial class QueryTabView : ReactiveUserControl<QueryTabViewModel>
         }
 
         _lastHorizontalOffset = offset.X;
-        _lastScrollChange = DateTime.UtcNow;
+        _lastScrollChangeTimestamp = Stopwatch.GetTimestamp();
         EnsureSnapTimer();
         _snapTimer?.Stop();
         _snapTimer?.Start();
@@ -1216,7 +1218,7 @@ public partial class QueryTabView : ReactiveUserControl<QueryTabViewModel>
             return;
         }
 
-        _lastScrollChange = DateTime.UtcNow;
+        _lastScrollChangeTimestamp = Stopwatch.GetTimestamp();
         EnsureSnapTimer();
         _snapTimer?.Stop();
         _snapTimer?.Start();
@@ -1261,7 +1263,7 @@ public partial class QueryTabView : ReactiveUserControl<QueryTabViewModel>
             return;
         }
 
-        if ((DateTime.UtcNow - _lastScrollChange).TotalMilliseconds < SnapDelayMs)
+        if (Stopwatch.GetElapsedTime(_lastScrollChangeTimestamp).TotalMilliseconds < SnapDelayMs)
         {
             return;
         }

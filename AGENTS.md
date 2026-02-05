@@ -195,6 +195,148 @@ Run these locally before considering a change complete:
 - Keep PRs easy to review: small diffs, clear intent, minimal churn.
 
 ---
+# Avalonia Specific
+## 1) Architecture: keep UI thin, keep logic pure
+- **MVVM with a real “core”**: put business rules in services/domain classes that don’t know Avalonia exists.
+- **ViewModels are orchestration**: call services, manage state, expose commands/observables—avoid “business logic” inside them when possible.
+- **One-way data flow by default**: UI events → VM → state → UI. Use two-way binding only when it genuinely reduces complexity.
+
+## 2) Avalonia best practices (XAML, bindings, composition)
+- **Use compiled bindings** (`x:DataType`) wherever possible for performance + compile-time safety.
+- Prefer **DataTemplates** to map VM → View (less manual view instantiation).
+- Use **styles/themes/resources** instead of hard-coded values:
+    - keep spacing, typography, colors as resources (“design tokens”)
+    - prefer `DynamicResource` for theme switching.
+- Keep code-behind minimal:
+    - view activation / subscription wiring is OK
+    - avoid putting logic in events; route events into the VM.
+
+**Compiled binding example**
+```xml
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:MyApp.ViewModels"
+             x:Class="MyApp.Views.CustomerView"
+             x:DataType="vm:CustomerViewModel">
+
+  <TextBox Text="{Binding Name}" />
+  <Button Command="{Binding Save}" Content="Save" />
+</UserControl>
+```
+
+## 3) ReactiveUI patterns that prevent “Rx spaghetti”
+### Use `ReactiveCommand` for *all* user actions
+- encapsulates async work + disabled states + error streams
+- keeps event handlers out of views
+
+```csharp
+public sealed class CustomerViewModel : ReactiveObject
+{
+    private string? _name;
+    public string? Name
+    {
+        get => _name;
+        set => this.RaiseAndSetIfChanged(ref _name, value);
+    }
+
+    public ReactiveCommand<Unit, Unit> Save { get; }
+
+    public CustomerViewModel(ICustomerService service)
+    {
+        var canSave = this.WhenAnyValue(x => x.Name)
+            .Select(name => !string.IsNullOrWhiteSpace(name));
+
+        Save = ReactiveCommand.CreateFromTask(
+            execute: () => service.SaveAsync(Name!),
+            canExecute: canSave
+        );
+
+        // Centralized error handling for the command
+        Save.ThrownExceptions.Subscribe(ex => /* log + show dialog via Interaction */);
+    }
+}
+```
+
+### Use activation to avoid memory leaks
+For views/viewmodels that subscribe to observables, use **`WhenActivated` + disposables**.
+
+```csharp
+this.WhenActivated(disposables =>
+{
+    ViewModel!.Save
+        .IsExecuting
+        .ObserveOn(RxApp.MainThreadScheduler)
+        .Subscribe(isBusy => BusyIndicator.IsVisible = isBusy)
+        .DisposeWith(disposables);
+});
+```
+
+### Prefer a few “state streams” over many subscriptions
+- Model your UI state as derived observables (e.g., `IsBusy`, `StatusText`, `HasErrors`)
+- Use `ToProperty` / `ObservableAsPropertyHelper` for computed state.
+
+## 4) Threading rules (desktop apps live or die here)
+- Never block the UI thread (`.Result`, `.Wait()`, long loops).
+- Always **`ObserveOn(RxApp.MainThreadScheduler)`** before touching UI-bound properties if work happens off-thread.
+- For “typeahead/search” scenarios:
+    - `Throttle` input
+    - cancel stale requests via `Switch`
+    - handle errors without killing the stream
+
+```csharp
+this.WhenAnyValue(x => x.Query)
+    .Throttle(TimeSpan.FromMilliseconds(250))
+    .DistinctUntilChanged()
+    .Select(q => Observable.FromAsync(ct => service.SearchAsync(q, ct)))
+    .Switch()
+    .ObserveOn(RxApp.MainThreadScheduler)
+    .Subscribe(results => Results = results);
+```
+
+## 5) Dialogs, navigation, and platform services without coupling
+- Use **ReactiveUI `Interaction<TInput, TOutput>`** for dialogs/notifications:
+    - VM requests a dialog
+    - View decides how to show it
+- Keep platform-specific concerns behind interfaces:
+    - file pickers, clipboard, windowing, notifications, OS paths
+
+This avoids `ViewModel -> Window` references and keeps VMs testable.
+
+## 6) Styling & design system practices (Avalonia-specific)
+- Treat your theme as a **small design system**:
+    - spacing scale (`4, 8, 12, 16…`)
+    - typography styles
+    - semantic colors (`Primary`, `Danger`, `Surface`, etc.)
+- Prefer **ControlThemes** / reusable styles for consistent UI.
+- Create custom controls only when composition cannot express the behavior cleanly.
+
+## 7) Performance & responsiveness
+- Use virtualization for large lists (Avalonia supports virtualizing panels).
+- Avoid heavy value converters in hot paths; prefer computed VM properties.
+- Keep images/icons optimized; prefer vector when possible.
+- Defer expensive work until needed (lazy loading, incremental rendering).
+
+## 8) Testing strategy that actually works
+- **Unit test ViewModels** with `TestScheduler` (ReactiveUI/Rx).
+- Mock services; verify:
+    - command `CanExecute`
+    - derived state changes
+    - error flows (`ThrownExceptions`)
+- Integration test only a thin slice of UI; most logic should already be covered.
+
+## 9) Logging, errors, and “don’t crash the UX”
+- Handle exceptions at 3 levels:
+    1) inside services (wrap + enrich)
+    2) `ReactiveCommand.ThrownExceptions`
+    3) global exception handler (last resort)
+- Make failures visible but non-fatal: status bar, toast, dialog, retry.
+
+## 10) Composition root & DI (keep it boring)
+- Configure DI once (startup), inject services into VMs.
+- Avoid service locator inside application code (fine at the edges/bootstrapping, not inside core logic).
+- Register view ↔ VM mappings cleanly (ReactiveUI view locator patterns).
+
+---
 
 ## Change requirements (what to include with any code change)
 Every change must include:

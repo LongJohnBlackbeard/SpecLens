@@ -60,6 +60,7 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
     };
 
     private readonly IJdeConnectionService _connectionService;
+    private readonly IDataDictionaryInfoService _dataDictionaryInfoService;
     private readonly bool _isBusinessView;
     private readonly ObservableCollection<SpecColumnDisplay> _columns = new();
     private readonly ObservableCollection<SpecIndexDisplay> _indexes = new();
@@ -89,11 +90,15 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
     private IReadOnlyList<ColumnMetadata> _viewTablesViewportColumns = Array.Empty<ColumnMetadata>();
     private IReadOnlyList<ColumnMetadata> _viewJoinsViewportColumns = Array.Empty<ColumnMetadata>();
 
-    public SpecsTabViewModel(JdeObjectInfo jdeObject, IJdeConnectionService connectionService)
+    public SpecsTabViewModel(
+        JdeObjectInfo jdeObject,
+        IJdeConnectionService connectionService,
+        IDataDictionaryInfoService dataDictionaryInfoService)
         : base($"Specs: {jdeObject.ObjectName}", $"specs_{jdeObject.ObjectName}_{Guid.NewGuid():N}")
     {
         TableName = jdeObject.ObjectName;
         _connectionService = connectionService;
+        _dataDictionaryInfoService = dataDictionaryInfoService;
         _isBusinessView = string.Equals(jdeObject.ObjectType?.Trim(), "BSVW", StringComparison.OrdinalIgnoreCase);
         Columns = new ReadOnlyObservableCollection<SpecColumnDisplay>(_columns);
         Indexes = new ReadOnlyObservableCollection<SpecIndexDisplay>(_indexes);
@@ -111,6 +116,7 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
     public ReadOnlyObservableCollection<SpecViewJoinDisplay> ViewJoins { get; }
     public bool IsBusinessView => _isBusinessView;
     public bool IsTableSpec => !_isBusinessView;
+    public IDataDictionaryInfoService DataDictionaryInfo => _dataDictionaryInfoService;
     public IGridDataProvider ColumnsViewportDataProvider => _columnsViewportProvider;
     public IGridDataProvider IndexesViewportDataProvider => _indexesViewportProvider;
     public IGridDataProvider ViewTablesViewportDataProvider => _viewTablesViewportProvider;

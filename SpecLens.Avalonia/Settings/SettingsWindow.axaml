@@ -83,7 +83,7 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
-                            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto"
+                            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto, Auto"
                                   ColumnSpacing="12" RowSpacing="10">
                                 <TextBlock Grid.Row="0" Text="Comments" Width="110" VerticalAlignment="Center" />
                                 <ColorPicker Grid.Row="0" Grid.Column="1"
@@ -94,7 +94,7 @@
                                              Width="180"
                                              Color="{Binding EventRulesLinkColor, Mode=TwoWay}" />
 
-                                <TextBlock Grid.Row="1" Text="Pipes" Width="110" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="0" Grid.Row="1" Text="Pipes" Width="110" VerticalAlignment="Center" />
                                 <ColorPicker Grid.Row="1" Grid.Column="1"
                                              Width="180"
                                              Color="{Binding EventRulesPipeColor, Mode=TwoWay}" />
@@ -103,7 +103,7 @@
                                              Width="180"
                                              Color="{Binding EventRulesInputColor, Mode=TwoWay}" />
 
-                                <TextBlock Grid.Row="2" Text="Outputs" Width="110" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="0" Grid.Row="2" Text="Outputs" Width="110" VerticalAlignment="Center" />
                                 <ColorPicker Grid.Row="2" Grid.Column="1"
                                              Width="180"
                                              Color="{Binding EventRulesOutputColor, Mode=TwoWay}" />
@@ -112,7 +112,7 @@
                                              Width="180"
                                              Color="{Binding EventRulesEqualsColor, Mode=TwoWay}" />
 
-                                <TextBlock Grid.Row="3" Text="Default text" Width="110" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="0" Grid.Row="3" Text="Default text" Width="110" VerticalAlignment="Center" />
                                 <ColorPicker Grid.Row="3" Grid.Column="1"
                                              Width="180"
                                              Color="{Binding EventRulesDefaultTextColor, Mode=TwoWay}" />
@@ -120,6 +120,10 @@
                                 <ColorPicker Grid.Row="3" Grid.Column="3"
                                              Width="180"
                                              Color="{Binding EventRulesEditorBackgroundColor, Mode=TwoWay}" />
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="String" Width="110" VerticalAlignment="Center" />
+                                <ColorPicker Grid.Row="4" Grid.Column="1"
+                                             Width="180"
+                                             Color="{Binding EventRulesStringColor, Mode=TwoWay}" />
                             </Grid>
                         </Border>
                     </StackPanel>

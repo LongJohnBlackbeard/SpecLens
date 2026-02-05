@@ -32,10 +32,11 @@ internal static class F9860Structures
     {
         public const string Table = "TBLE";
         public const string BusinessFunction = "BSFN";
-        public const string NamedEventRule = "NER";
+        public const string BusinessFunctionLibrary = "BL";
         public const string Report = "UBE";
         public const string Application = "APPL";
         public const string DataStructure = "DSTR";
+        public const string MediaObjectDataStructure = "GT";
         public const string BusinessView = "BSVW";
         public const string DataDictionary = "DD";
         public const string MediaObject = "MDBF";

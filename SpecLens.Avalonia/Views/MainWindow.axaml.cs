@@ -8,7 +8,6 @@ using ReactiveUI;
 using ReactiveUI.Avalonia;
 using RoutedEventArgs = global::Avalonia.Interactivity.RoutedEventArgs;
 using SpecLens.Avalonia.Settings;
-using SpecLens.Avalonia.Services;
 using SpecLens.Avalonia.ViewModels;
 
 namespace SpecLens.Avalonia.Views;
@@ -160,7 +159,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
             return;
         }
 
-        var settingsService = App.GetService<IAppSettingsService>();
+        var settingsService = ViewModel?.SettingsService;
         if (settingsService == null)
         {
             return;
@@ -173,7 +172,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
     private void OnSearchSplitterPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        var settingsService = App.GetService<IAppSettingsService>();
+        var settingsService = ViewModel?.SettingsService;
         if (settingsService == null)
         {
             return;
@@ -188,7 +187,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
     private void OnMainWindowLoaded(object? sender, RoutedEventArgs e)
     {
-        var settingsService = App.GetService<IAppSettingsService>();
+        var settingsService = ViewModel?.SettingsService;
         if (settingsService == null)
         {
             return;

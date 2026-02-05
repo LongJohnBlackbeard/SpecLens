@@ -28,13 +28,23 @@ public partial class JdeXmlEngine
     }
 
     // ReSharper disable once InconsistentNaming
+    // This is for NER Specific functions. Returning just the text for now until more information is gathered.
+    private string HandleGBRSLBF(XElement xmlEventRuleBlock)
+    {
+
+        var summaryText = xmlEventRuleBlock.Attribute("summary_text")?.Value ?? "ERROR";
+        summaryText = summaryText.Replace("&quot;", "\"");
+        return summaryText;
+    }
+
+    // ReSharper disable once InconsistentNaming
     private string HandleGBRCOMMENT(XElement xmlEventRuleBlock)
     {
-        // <GBRCOMMENT>
-        //     <text>// First check if there is hardness for the current SN</text>
-        // </GBRCOMMENT>
-
-        return xmlEventRuleBlock.Value;
+        var commentText = xmlEventRuleBlock.Value ?? "ERROR";
+        // When comments are too long in ER it is sent to the next line yet in XML it is the same object.
+        // Thus, Carriage returns are in the middle of the string. Remove them here and handle wrapping in the UI.
+        commentText = commentText.Replace("\r", "").Replace("\n", "");
+        return commentText;
     }
 
     // ReSharper disable once InconsistentNaming

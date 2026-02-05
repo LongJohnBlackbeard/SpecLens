@@ -149,8 +149,9 @@ public sealed partial class JdeConnectionService : ReactiveObject, IJdeConnectio
         {
             await _client.DisconnectAsync();
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Warning(ex, "Failed to disconnect JDE client after marking disconnected");
         }
     }
 
@@ -203,8 +204,9 @@ public sealed partial class JdeConnectionService : ReactiveObject, IJdeConnectio
                 ?.MainModule
                 ?.FileName;
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Debug(ex, "Failed to inspect running activConsole process");
             return null;
         }
     }

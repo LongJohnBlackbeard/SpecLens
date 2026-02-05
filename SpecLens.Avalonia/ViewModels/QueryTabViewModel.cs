@@ -26,6 +26,7 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
     private static readonly ConcurrentDictionary<string, JdeDataDictionaryTitle> DataDictionaryCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly IJdeConnectionService _connectionService;
     private readonly IAppSettingsService _settingsService;
+    private readonly IDataDictionaryInfoService _dataDictionaryInfoService;
     private readonly bool _isBusinessView;
     private readonly ObservableCollection<ColumnFilter> _filters = new();
     private readonly ObservableCollection<JdeDataSourceInfo> _dataSources = new();
@@ -64,12 +65,18 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
     private double _headerRowHeight = HeaderRowHeightSingleLine;
     private double _headerTotalHeight = HeaderRowHeightSingleLine + HeaderFilterRowHeight;
 
-    public QueryTabViewModel(string tableName, IJdeConnectionService connectionService, IAppSettingsService settingsService, bool isBusinessView = false)
+    public QueryTabViewModel(
+        string tableName,
+        IJdeConnectionService connectionService,
+        IAppSettingsService settingsService,
+        IDataDictionaryInfoService dataDictionaryInfoService,
+        bool isBusinessView = false)
         : base($"Query: {tableName}", $"query_{tableName}_{Guid.NewGuid():N}")
     {
         TableName = tableName;
         _connectionService = connectionService;
         _settingsService = settingsService;
+        _dataDictionaryInfoService = dataDictionaryInfoService;
         _isBusinessView = isBusinessView;
         QueryColumnWidth = _settingsService.Current.QueryColumnWidth > 0 ? _settingsService.Current.QueryColumnWidth : DefaultColumnWidth;
         Filters = new ReadOnlyObservableCollection<ColumnFilter>(_filters);
@@ -107,6 +114,7 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
     public ReadOnlyObservableCollection<JdeIndexInfo> Indexes { get; }
     public ReadOnlyObservableCollection<string> ColumnNames { get; }
     public bool IsBusinessView => _isBusinessView;
+    public IDataDictionaryInfoService DataDictionaryInfo => _dataDictionaryInfoService;
 
     public ObservableCollection<Dictionary<string, object?>> QueryResults
     {
@@ -437,7 +445,7 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
             Log.Information("Query tab start {Table} with {FilterCount} filters", TableName, activeFilters.Count);
 
             await _connectionService.RunExclusiveAsync(
-                client => Task.Run(() =>
+                client => Task.Run(async () =>
                 {
                     bool shouldPopulateResults = !UseViewportGrid;
                     bool allowDataSourceFallback = SelectedDataSource == null || string.IsNullOrWhiteSpace(SelectedDataSource.Name);
@@ -541,8 +549,8 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
 
                             while (pendingUiUpdates > 5)
                             {
-                                Thread.Sleep(10);
                                 ct.ThrowIfCancellationRequested();
+                                await Task.Delay(10, ct).ConfigureAwait(false);
                             }
                         }
                     }
@@ -574,7 +582,8 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
                     {
                         while (pendingUiUpdates > 0)
                         {
-                            Thread.Sleep(10);
+                            ct.ThrowIfCancellationRequested();
+                            await Task.Delay(10, ct).ConfigureAwait(false);
                         }
                     }
                 }, ct),
@@ -1444,8 +1453,9 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Debug(ex, "Failed to load data dictionary titles for query filters.");
         }
 
         ApplyDescriptionsFromCache();
