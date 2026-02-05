@@ -256,13 +256,14 @@ Task<List<JdeObjectInfo>> GetObjectsAsync(
 
 **Object Types:**
 - `JdeObjectType.All` - All objects
-- `JdeObjectType.Table` - Tables (TBLE)
-- `JdeObjectType.BusinessFunction` - Business Functions (BSFN)
-- `JdeObjectType.Report` - Reports/UBEs (UBE)
-- `JdeObjectType.Application` - Applications (APPL)
-- `JdeObjectType.DataStructure` - Data Structures (DSTR)
+- `JdeObjectType.Application` - Interactive Applications (APPL)
+- `JdeObjectType.BusinessFunctionLibrary` - Business Function Libraries (BL)
+- `JdeObjectType.BusinessFunction` - Business Function Modules (BSFN)
 - `JdeObjectType.BusinessView` - Business Views (BSVW)
-- `JdeObjectType.DataDictionary` - Data Dictionary (DD)
+- `JdeObjectType.DataStructure` - Data Structures (DSTR)
+- `JdeObjectType.MediaObjectDataStructure` - Media Object Data Structures (GT)
+- `JdeObjectType.Table` - Table Definitions (TBLE)
+- `JdeObjectType.Report` - Batch Applications/UBEs (UBE)
 
 #### Table Metadata
 

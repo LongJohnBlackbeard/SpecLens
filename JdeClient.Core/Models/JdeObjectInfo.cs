@@ -46,11 +46,11 @@ public enum JdeObjectType
     All,
     Table,              // TBLE
     BusinessFunction,   // BSFN
-    NamedEventRule,     // NER
+    BusinessFunctionLibrary, // BL
     Report,             // UBE
     Application,        // APPL
     DataStructure,      // DSTR
+    MediaObjectDataStructure, // GT
     BusinessView,       // BSVW
-    DataDictionary,     // DD
     Unknown
 }
