@@ -40,7 +40,7 @@ public partial class JdeXmlEngine
     // ReSharper disable once InconsistentNaming
     private string HandleGBRCOMMENT(XElement xmlEventRuleBlock)
     {
-        var commentText = xmlEventRuleBlock.Attribute("comment_text")?.Value ?? "ERROR";
+        var commentText = xmlEventRuleBlock.Value ?? "ERROR";
         // When comments are too long in ER it is sent to the next line yet in XML it is the same object.
         // Thus, Carriage returns are in the middle of the string. Remove them here and handle wrapping in the UI.
         commentText = commentText.Replace("\r", "").Replace("\n", "");
