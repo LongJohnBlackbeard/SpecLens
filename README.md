@@ -84,6 +84,16 @@ dotnet test JdeClient.Core.UnitTests/JdeClient.Core.UnitTests.csproj -c Release 
 ```
 Coverage output (Cobertura XML) is written to `TestResults/coverage/coverage.cobertura.xml` at the repo root.
 
+Create readable html report from the Cobertura XML
+```bash
+reportgenerator -reports:"TestResults\coverage\coverage.cobertura.xml" -targetdir:"TestResults\coverage-report" -reporttypes:"HtmlInline;TextSummary"
+```
+
+Open the html report
+```bash
+Start-Process "TestResults\coverage-report\index.html"
+```
+
 ### Complexity & CRAP standards
 We use ReportGenerator's **Risk Hotspots** view (CRAP + Cyclomatic Complexity) to guide improvements.
 

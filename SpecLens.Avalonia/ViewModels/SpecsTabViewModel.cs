@@ -49,7 +49,7 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
     private static readonly IReadOnlyList<ViewportColumnDefinition> ViewTableLayout = new[]
     {
         new ViewportColumnDefinition("TableName", "Table", 200),
-        new ViewportColumnDefinition("InstanceCount", "Instances", 90),
+        new ViewportColumnDefinition("Instance", "Instance", 90),
         new ViewportColumnDefinition("PrimaryIndexId", "Primary Index", 120)
     };
 
@@ -456,12 +456,26 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
                 });
             }
 
+            var tableTotals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var table in viewInfo.Tables)
             {
+                tableTotals.TryGetValue(table.TableName, out int count);
+                tableTotals[table.TableName] = count + 1;
+            }
+
+            var tableInstanceCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var table in viewInfo.Tables)
+            {
+                tableInstanceCounters.TryGetValue(table.TableName, out int instanceIndex);
+                tableInstanceCounters[table.TableName] = instanceIndex + 1;
+
+                int total = tableTotals[table.TableName];
                 _viewTables.Add(new SpecViewTableDisplay
                 {
                     TableName = table.TableName,
-                    InstanceCount = table.InstanceCount,
+                    Instance = total > 1
+                        ? $"{instanceIndex + 1} of {total}"
+                        : "1",
                     PrimaryIndexId = table.PrimaryIndexId
                 });
             }
@@ -516,7 +530,7 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
                 _viewTablesViewportProvider.AppendRow(new object?[]
                 {
                     table.TableName,
-                    table.InstanceCount,
+                    table.Instance,
                     table.PrimaryIndexId
                 });
             }

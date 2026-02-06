@@ -799,7 +799,7 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
 
             columns.Add(new JdeColumn
             {
-                Name = BuildViewColumnName(column.TableName, column.DataItem),
+                Name = BuildViewColumnName(column.TableName, column.DataItem, column.InstanceId),
                 DataDictionaryItem = column.DataItem,
                 SqlName = column.DataItem,
                 DataType = column.DataType,
@@ -813,8 +813,15 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
         return columns;
     }
 
-    private static string BuildViewColumnName(string? tableName, string dataItem)
+    private static string BuildViewColumnName(string? tableName, string dataItem, int instanceId)
     {
+        if (instanceId > 0)
+        {
+            return string.IsNullOrWhiteSpace(tableName)
+                ? $"{dataItem}({instanceId})"
+                : $"{tableName}({instanceId}).{dataItem}";
+        }
+
         if (string.IsNullOrWhiteSpace(tableName))
         {
             return dataItem;

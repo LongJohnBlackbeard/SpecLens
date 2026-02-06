@@ -289,7 +289,11 @@ public partial class QueryTabView : ReactiveUserControl<QueryTabViewModel>
             return;
         }
 
-        var filterLookup = filters.ToDictionary(filter => filter.Name, StringComparer.OrdinalIgnoreCase);
+        var filterLookup = new Dictionary<string, ColumnFilter>(StringComparer.OrdinalIgnoreCase);
+        foreach (var filter in filters)
+        {
+            filterLookup.TryAdd(filter.Name, filter);
+        }
         var orderedNames = _viewModel.GetOrderedColumns(filters.Select(filter => filter.Name).ToList());
 
         foreach (var name in orderedNames)
