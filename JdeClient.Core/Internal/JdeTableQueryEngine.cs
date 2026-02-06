@@ -559,7 +559,7 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
                 continue;
             }
 
-            string columnName = BuildQualifiedViewColumnName(column.TableName, column.DataItem);
+            string columnName = BuildQualifiedViewColumnName(column.TableName, column.DataItem, column.InstanceId);
             columns.Add(new JdeColumn
             {
                 Name = columnName,
@@ -1544,7 +1544,7 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
 
             if (!string.IsNullOrWhiteSpace(column.SourceTable))
             {
-                string qualified = BuildQualifiedViewColumnName(column.SourceTable, column.DataDictionaryItem ?? column.Name ?? column.SqlName);
+                string qualified = BuildQualifiedViewColumnName(column.SourceTable, column.DataDictionaryItem ?? column.Name ?? column.SqlName, column.InstanceId ?? 0);
                 if (!string.IsNullOrWhiteSpace(qualified))
                 {
                     map[qualified] = column;
@@ -1824,14 +1824,29 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
 
         tableName = columnName.Substring(0, index).Trim();
         itemName = columnName.Substring(index + 1).Trim();
+
+        // Strip instance suffix e.g. "F5530021(1)" -> "F5530021"
+        int parenIndex = tableName.IndexOf('(');
+        if (parenIndex > 0)
+        {
+            tableName = tableName.Substring(0, parenIndex);
+        }
+
         return tableName.Length > 0 && itemName.Length > 0;
     }
 
-    private static string BuildQualifiedViewColumnName(string? tableName, string? dataItem)
+    private static string BuildQualifiedViewColumnName(string? tableName, string? dataItem, int instanceId = 0)
     {
         if (string.IsNullOrWhiteSpace(dataItem))
         {
             return string.Empty;
+        }
+
+        if (instanceId > 0)
+        {
+            return string.IsNullOrWhiteSpace(tableName)
+                ? $"{dataItem}({instanceId})"
+                : $"{tableName}({instanceId}).{dataItem}";
         }
 
         return string.IsNullOrWhiteSpace(tableName)
