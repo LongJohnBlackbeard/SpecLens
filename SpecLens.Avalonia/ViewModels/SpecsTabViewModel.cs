@@ -35,8 +35,7 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
         new ViewportColumnDefinition("Alias", "Alias", 90),
         new ViewportColumnDefinition("Name", "Name", 160),
         new ViewportColumnDefinition("Type", "Type", 120),
-        new ViewportColumnDefinition("SourceTable", "Table", 120),
-        new ViewportColumnDefinition("SqlColumnName", "SQL Column", 120)
+        new ViewportColumnDefinition("SourceTable", "Table", 120)
     };
 
     private static readonly IReadOnlyList<ViewportColumnDefinition> IndexLayout = new[]
@@ -428,6 +427,13 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
                 }
             }
 
+            var tableTotals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var table in viewInfo.Tables)
+            {
+                tableTotals.TryGetValue(table.TableName, out int count);
+                tableTotals[table.TableName] = count + 1;
+            }
+
             int displaySequence = 0;
             foreach (var column in viewInfo.Columns.OrderBy(column => column.Sequence))
             {
@@ -444,6 +450,14 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
                     description = lookupDescription;
                 }
 
+                string sourceTable = column.TableName;
+                if (column.InstanceId > 0 &&
+                    !string.IsNullOrWhiteSpace(sourceTable) &&
+                    tableTotals.TryGetValue(sourceTable, out int total) && total > 1)
+                {
+                    sourceTable = $"{sourceTable}({column.InstanceId})";
+                }
+
                 _columns.Add(new SpecColumnDisplay
                 {
                     Sequence = ++displaySequence,
@@ -451,16 +465,9 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
                     Alias = alias,
                     Name = name,
                     Type = FormatViewColumnType(column),
-                    SourceTable = column.TableName,
+                    SourceTable = sourceTable,
                     SqlColumnName = string.Empty
                 });
-            }
-
-            var tableTotals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            foreach (var table in viewInfo.Tables)
-            {
-                tableTotals.TryGetValue(table.TableName, out int count);
-                tableTotals[table.TableName] = count + 1;
             }
 
             var tableInstanceCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
