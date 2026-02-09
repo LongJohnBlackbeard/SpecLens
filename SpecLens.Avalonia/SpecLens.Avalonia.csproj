@@ -32,7 +32,7 @@
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.11" />
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.11" />
     <PackageReference Include="Avalonia.Controls.ColorPicker" Version="11.3.11" />
-    <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.0" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.1" />
     <PackageReference Include="ReactiveUI" Version="22.3.1" />
     <PackageReference Include="ReactiveUI.Avalonia" Version="11.3.8" />
     <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
