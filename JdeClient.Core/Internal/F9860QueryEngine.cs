@@ -286,46 +286,10 @@ internal class F9860QueryEngine : IF9860QueryEngine
     /// </summary>
     private JdeObjectInfo? ExtractObjectInfo(HREQUEST hRequest)
     {
-        try
-        {
-            // Extract each column value
-            DebugLog($"[DEBUG]   Getting OBNM column...");
-            string objectName = NormalizeText(GetColumnValue(hRequest, Columns.OBNM, GetColumnLength(Columns.OBNM)));
-            DebugLog($"[DEBUG]   ObjectName: '{objectName}'");
-
-            DebugLog($"[DEBUG]   Getting FUNO column...");
-            string objectType = NormalizeText(GetColumnValue(hRequest, Columns.FUNO, GetColumnLength(Columns.FUNO)));
-            DebugLog($"[DEBUG]   ObjectType: '{objectType}'");
-
-            DebugLog($"[DEBUG]   Getting SY column...");
-            string systemCode = NormalizeText(GetColumnValue(hRequest, Columns.SY, GetColumnLength(Columns.SY)));
-            DebugLog($"[DEBUG]   SystemCode: '{systemCode}'");
-
-            DebugLog($"[DEBUG]   Getting MD column...");
-            string description = NormalizeText(GetColumnValue(hRequest, Columns.MD, GetColumnLength(Columns.MD)));
-            DebugLog($"[DEBUG]   Description: '{description}'");
-
-            // Validate required fields
-            if (string.IsNullOrWhiteSpace(objectName) || string.IsNullOrWhiteSpace(objectType))
-            {
-                DebugLog($"[DEBUG]   Validation failed - objectName or objectType is empty");
-                return null;
-            }
-
-            return new JdeObjectInfo
-            {
-                ObjectName = objectName,
-                ObjectType = objectType,
-                SystemCode = systemCode,
-                Description = description
-            };
-        }
-        catch (Exception ex)
-        {
-            DebugLog($"[DEBUG]   Exception in ExtractObjectInfo: {ex.Message}");
-            DebugLog($"[DEBUG]   Stack trace: {ex.StackTrace}");
-            return null; // Skip invalid records
-        }
+        return ExtractObjectInfoCore(
+            (col, len) => GetColumnValue(hRequest, col, len),
+            col => GetColumnLength(col),
+            _options.EnableDebug ? DebugLog : null);
     }
 
 
@@ -351,7 +315,7 @@ internal class F9860QueryEngine : IF9860QueryEngine
         return ReadValueFromPointer(valuePtr, columnLength, DebugLog);
     }
 
-    private static DBREF CreateColumnDbRef(string columnName)
+    internal static DBREF CreateColumnDbRef(string columnName)
     {
         // NOTE: szTable and szDict must be null-terminated strings (NID format)
         return new DBREF
@@ -387,7 +351,7 @@ internal class F9860QueryEngine : IF9860QueryEngine
         return ReadAnsiValue(valuePtr, log);
     }
 
-    private static void LogBufferHex(IntPtr valuePtr, Action<string>? log)
+    internal static void LogBufferHex(IntPtr valuePtr, Action<string>? log)
     {
         // Dump first 50 bytes to see what we got
         StringBuilder hexDump = new StringBuilder();
@@ -400,7 +364,7 @@ internal class F9860QueryEngine : IF9860QueryEngine
         log?.Invoke($"[DEBUG]     Buffer hex: {hexDump}");
     }
 
-    private static string TryReadFixedValue(IntPtr valuePtr, int columnLength, Action<string>? log)
+    internal static string TryReadFixedValue(IntPtr valuePtr, int columnLength, Action<string>? log)
     {
         if (columnLength > 0 && columnLength < 4096)
         {
@@ -412,7 +376,7 @@ internal class F9860QueryEngine : IF9860QueryEngine
         return string.Empty;
     }
 
-    private static void LogValue(Action<string>? log, string label, string value)
+    internal static void LogValue(Action<string>? log, string label, string value)
     {
         log?.Invoke($"[DEBUG]     {label} value: '{value}' (length: {value.Length})");
     }
@@ -856,7 +820,7 @@ internal class F9860QueryEngine : IF9860QueryEngine
         return _columnLengths.TryGetValue(columnName, out int length) ? length : 0;
     }
 
-    private static string ReadJCharString(IntPtr valuePtr, int length)
+    internal static string ReadJCharString(IntPtr valuePtr, int length)
     {
         if (valuePtr == IntPtr.Zero || length <= 0)
         {
@@ -869,9 +833,43 @@ internal class F9860QueryEngine : IF9860QueryEngine
         return NormalizeText(Encoding.Unicode.GetString(bytes));
     }
 
+    /// <summary>
+    /// Extract object information using provided column accessors.
+    /// </summary>
+    internal static JdeObjectInfo? ExtractObjectInfoCore(
+        Func<string, int, string> getColumnValue,
+        Func<string, int> getColumnLength,
+        Action<string>? log)
+    {
+        try
+        {
+            string objectName = NormalizeText(getColumnValue(Columns.OBNM, getColumnLength(Columns.OBNM)));
+            string objectType = NormalizeText(getColumnValue(Columns.FUNO, getColumnLength(Columns.FUNO)));
+            string systemCode = NormalizeText(getColumnValue(Columns.SY, getColumnLength(Columns.SY)));
+            string description = NormalizeText(getColumnValue(Columns.MD, getColumnLength(Columns.MD)));
 
+            if (string.IsNullOrWhiteSpace(objectName) || string.IsNullOrWhiteSpace(objectType))
+            {
+                log?.Invoke("[DEBUG]   Validation failed - objectName or objectType is empty");
+                return null;
+            }
 
-    private static HREQUEST ResolveDriverRequest(HREQUEST hRequest)
+            return new JdeObjectInfo
+            {
+                ObjectName = objectName,
+                ObjectType = objectType,
+                SystemCode = systemCode,
+                Description = description
+            };
+        }
+        catch (Exception ex)
+        {
+            log?.Invoke($"[DEBUG]   Exception in ExtractObjectInfoCore: {ex.Message}");
+            return null;
+        }
+    }
+
+    internal static HREQUEST ResolveDriverRequest(HREQUEST hRequest)
     {
         return hRequest;
     }
