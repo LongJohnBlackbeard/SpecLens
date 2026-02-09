@@ -220,7 +220,7 @@ internal sealed class SpecTableMetadataService : IDisposable
         return CreateColumn(sqlName, dictItem, evdType, length, decimals);
     }
 
-    private static ColumnCache ReadColumnCache(IntPtr colCachePtr, bool useNativeLayout)
+    internal static ColumnCache ReadColumnCache(IntPtr colCachePtr, bool useNativeLayout)
     {
         if (useNativeLayout)
         {
@@ -240,7 +240,7 @@ internal sealed class SpecTableMetadataService : IDisposable
             packed.nDecimals);
     }
 
-    private readonly struct ColumnCache
+    internal readonly struct ColumnCache
     {
         public ColumnCache(string dictItem, int evdType, int length, int decimals)
         {
@@ -256,7 +256,7 @@ internal sealed class SpecTableMetadataService : IDisposable
         public int Decimals { get; }
     }
 
-    private readonly struct TableSpecHeader
+    internal readonly struct TableSpecHeader
     {
         public TableSpecHeader(ushort numCols, ushort numIndex, IntPtr columnsPtr, IntPtr indexPtr, bool useNativeLayout)
         {
@@ -274,7 +274,7 @@ internal sealed class SpecTableMetadataService : IDisposable
         public bool UseNativeLayout { get; }
     }
 
-    private bool TryReadHeader(IntPtr tablePtr, string tableName, out TableSpecHeader header)
+    internal bool TryReadHeader(IntPtr tablePtr, string tableName, out TableSpecHeader header)
     {
         var packed = Marshal.PtrToStructure<TABLECACHE_HEADER>(tablePtr);
         if (DebugEnabled)
@@ -304,17 +304,17 @@ internal sealed class SpecTableMetadataService : IDisposable
         return false;
     }
 
-    private static bool IsHeaderValid(TABLECACHE_HEADER header)
+    internal static bool IsHeaderValid(TABLECACHE_HEADER header)
     {
         return header.nNumCols > 0 && header.lpColumns != IntPtr.Zero;
     }
 
-    private static bool IsHeaderValid(TABLECACHE_HEADER_NATIVE header)
+    internal static bool IsHeaderValid(TABLECACHE_HEADER_NATIVE header)
     {
         return header.nNumCols > 0 && header.lpColumns != IntPtr.Zero;
     }
 
-    private static string Normalize(string? value)
+    internal static string Normalize(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {

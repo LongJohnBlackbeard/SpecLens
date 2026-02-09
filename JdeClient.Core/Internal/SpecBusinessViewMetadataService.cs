@@ -34,14 +34,29 @@ internal sealed class SpecBusinessViewMetadataService : IDisposable
             return null;
         }
 
+        int GetSpecs(NID nid, out IntPtr ptr) => JDBRS_GetBOBSpecs(_hUser, nid, out ptr, (char)1, IntPtr.Zero);
+
+        return GetBusinessViewInfoCore(
+            viewName,
+            GetSpecs,
+            ptr => JDBRS_FreeBOBSpecs(ptr),
+            DebugEnabled ? _options.WriteLog : null);
+    }
+
+    /// <summary>
+    /// Core extraction logic for business view metadata, testable with mock delegates.
+    /// </summary>
+    internal static JdeBusinessViewInfo? GetBusinessViewInfoCore(
+        string viewName,
+        GetBobSpecsDelegate getBobSpecs,
+        Action<IntPtr> freeBobSpecs,
+        Action<string>? log)
+    {
         IntPtr bobPtr = IntPtr.Zero;
         try
         {
-            int result = JDBRS_GetBOBSpecs(_hUser, new NID(viewName), out bobPtr, (char)1, IntPtr.Zero);
-            if (DebugEnabled)
-            {
-                _options.WriteLog($"[DEBUG] JDBRS_GetBOBSpecs({viewName}) result={result}, bobPtr=0x{bobPtr.ToInt64():X}");
-            }
+            int result = getBobSpecs(new NID(viewName), out bobPtr);
+            log?.Invoke($"[DEBUG] JDBRS_GetBOBSpecs({viewName}) result={result}, bobPtr=0x{bobPtr.ToInt64():X}");
 
             if (result != JDEDB_PASSED || bobPtr == IntPtr.Zero)
             {
@@ -73,12 +88,14 @@ internal sealed class SpecBusinessViewMetadataService : IDisposable
         {
             if (bobPtr != IntPtr.Zero)
             {
-                JDBRS_FreeBOBSpecs(bobPtr);
+                freeBobSpecs(bobPtr);
             }
         }
     }
 
-    private static void ReadTables(IntPtr tablesPtr, ushort tableCount, List<JdeBusinessViewTable> tables)
+    internal delegate int GetBobSpecsDelegate(NID viewName, out IntPtr bobPtr);
+
+    internal static void ReadTables(IntPtr tablesPtr, ushort tableCount, List<JdeBusinessViewTable> tables)
     {
         tables.Clear();
         if (tablesPtr == IntPtr.Zero || tableCount == 0)
@@ -105,7 +122,7 @@ internal sealed class SpecBusinessViewMetadataService : IDisposable
         }
     }
 
-    private static void ReadColumns(IntPtr columnsPtr, ushort columnCount, List<JdeBusinessViewColumn> columns)
+    internal static void ReadColumns(IntPtr columnsPtr, ushort columnCount, List<JdeBusinessViewColumn> columns)
     {
         columns.Clear();
         if (columnsPtr == IntPtr.Zero || columnCount == 0)
@@ -139,7 +156,7 @@ internal sealed class SpecBusinessViewMetadataService : IDisposable
         }
     }
 
-    private static void ReadJoins(IntPtr joinsPtr, ushort joinCount, List<JdeBusinessViewJoin> joins)
+    internal static void ReadJoins(IntPtr joinsPtr, ushort joinCount, List<JdeBusinessViewJoin> joins)
     {
         joins.Clear();
         if (joinsPtr == IntPtr.Zero || joinCount == 0)

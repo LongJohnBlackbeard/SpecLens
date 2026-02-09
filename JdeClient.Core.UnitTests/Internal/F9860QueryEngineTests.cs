@@ -293,4 +293,314 @@ public class F9860QueryEngineTests
         await Assert.That(F9860QueryEngine.MatchesObjectType("TBLE", JdeObjectType.Table)).IsTrue();
         await Assert.That(F9860QueryEngine.MatchesObjectType("BSFN", JdeObjectType.Table)).IsFalse();
     }
+
+    [Test]
+    public async Task MatchesObjectType_AllEnumValues()
+    {
+        await Assert.That(F9860QueryEngine.MatchesObjectType("BSFN", JdeObjectType.BusinessFunction)).IsTrue();
+        await Assert.That(F9860QueryEngine.MatchesObjectType("BL", JdeObjectType.BusinessFunctionLibrary)).IsTrue();
+        await Assert.That(F9860QueryEngine.MatchesObjectType("UBE", JdeObjectType.Report)).IsTrue();
+        await Assert.That(F9860QueryEngine.MatchesObjectType("APPL", JdeObjectType.Application)).IsTrue();
+        await Assert.That(F9860QueryEngine.MatchesObjectType("DSTR", JdeObjectType.DataStructure)).IsTrue();
+        await Assert.That(F9860QueryEngine.MatchesObjectType("GT", JdeObjectType.MediaObjectDataStructure)).IsTrue();
+        await Assert.That(F9860QueryEngine.MatchesObjectType("BSVW", JdeObjectType.BusinessView)).IsTrue();
+        await Assert.That(F9860QueryEngine.MatchesObjectType("TBLE", JdeObjectType.All)).IsTrue();
+        await Assert.That(F9860QueryEngine.MatchesObjectType("TBLE", JdeObjectType.Unknown)).IsFalse();
+    }
+
+    [Test]
+    public async Task ShouldApplyFilter_AllNull_ReturnsFalse()
+    {
+        await Assert.That(F9860QueryEngine.ShouldApplyFilter(null, null, null)).IsFalse();
+    }
+
+    [Test]
+    public async Task ShouldApplyFilter_NameOnly_ReturnsTrue()
+    {
+        await Assert.That(F9860QueryEngine.ShouldApplyFilter(null, "F01*", null)).IsTrue();
+    }
+
+    [Test]
+    public async Task ShouldApplyFilter_DescOnly_ReturnsTrue()
+    {
+        await Assert.That(F9860QueryEngine.ShouldApplyFilter(null, null, "Address")).IsTrue();
+    }
+
+    [Test]
+    public async Task ShouldApplyFilter_TypeOnly_ReturnsTrue()
+    {
+        await Assert.That(F9860QueryEngine.ShouldApplyFilter(JdeObjectType.Table, null, null)).IsTrue();
+    }
+
+    [Test]
+    public async Task ShouldApplyFilter_AllType_ReturnsFalse()
+    {
+        await Assert.That(F9860QueryEngine.ShouldApplyFilter(JdeObjectType.All, null, null)).IsFalse();
+    }
+
+    [Test]
+    public async Task TryGetObjectTypeCode_AllNamedEnumValues()
+    {
+        await AssertTypeCode(JdeObjectType.Table, F9860Structures.ObjectTypes.Table);
+        await AssertTypeCode(JdeObjectType.BusinessFunction, F9860Structures.ObjectTypes.BusinessFunction);
+        await AssertTypeCode(JdeObjectType.BusinessFunctionLibrary, F9860Structures.ObjectTypes.BusinessFunctionLibrary);
+        await AssertTypeCode(JdeObjectType.Report, F9860Structures.ObjectTypes.Report);
+        await AssertTypeCode(JdeObjectType.Application, F9860Structures.ObjectTypes.Application);
+        await AssertTypeCode(JdeObjectType.DataStructure, F9860Structures.ObjectTypes.DataStructure);
+        await AssertTypeCode(JdeObjectType.MediaObjectDataStructure, F9860Structures.ObjectTypes.MediaObjectDataStructure);
+        await AssertTypeCode(JdeObjectType.BusinessView, F9860Structures.ObjectTypes.BusinessView);
+
+        static async Task AssertTypeCode(JdeObjectType objectType, string expected)
+        {
+            var result = F9860QueryEngine.TryGetObjectTypeCode(objectType, out var code);
+            await Assert.That(result).IsTrue();
+            await Assert.That(code).IsEqualTo(expected);
+        }
+    }
+
+    [Test]
+    public async Task AddPatternFilter_ValueWithWildcard_UsesLike()
+    {
+        var filters = new List<(string Column, string Value, int Comparison)>();
+        F9860QueryEngine.AddPatternFilter(filters, F9860Structures.Columns.OBNM, "F01*");
+
+        await Assert.That(filters.Count).IsEqualTo(1);
+        await Assert.That(filters[0].Value).IsEqualTo("F01%");
+        await Assert.That(filters[0].Comparison).IsEqualTo(JDEDB_CMP_LK);
+    }
+
+    [Test]
+    public async Task AddPatternFilter_ValueWithoutWildcard_UsesEqual()
+    {
+        var filters = new List<(string Column, string Value, int Comparison)>();
+        F9860QueryEngine.AddPatternFilter(filters, F9860Structures.Columns.OBNM, "F0101");
+
+        await Assert.That(filters.Count).IsEqualTo(1);
+        await Assert.That(filters[0].Value).IsEqualTo("F0101");
+        await Assert.That(filters[0].Comparison).IsEqualTo(JDEDB_CMP_EQ);
+    }
+
+    [Test]
+    public async Task AddPatternFilter_NullValue_AddsNothing()
+    {
+        var filters = new List<(string Column, string Value, int Comparison)>();
+        F9860QueryEngine.AddPatternFilter(filters, F9860Structures.Columns.OBNM, null);
+        await Assert.That(filters.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ReadJCharString_ValidPtr_ReturnsDecodedString()
+    {
+        IntPtr buffer = Marshal.AllocHGlobal(20);
+        try
+        {
+            var bytes = System.Text.Encoding.Unicode.GetBytes("HELLO");
+            Marshal.Copy(bytes, 0, buffer, bytes.Length);
+
+            var value = F9860QueryEngine.ReadJCharString(buffer, 5);
+            await Assert.That(value).IsEqualTo("HELLO");
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    [Test]
+    public async Task ReadJCharString_ZeroLength_ReturnsEmpty()
+    {
+        IntPtr buffer = Marshal.AllocHGlobal(4);
+        try
+        {
+            var value = F9860QueryEngine.ReadJCharString(buffer, 0);
+            await Assert.That(value).IsEqualTo(string.Empty);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    [Test]
+    public async Task ReadJCharString_NullPtr_ReturnsEmpty()
+    {
+        var value = F9860QueryEngine.ReadJCharString(IntPtr.Zero, 5);
+        await Assert.That(value).IsEqualTo(string.Empty);
+    }
+
+    [Test]
+    public async Task CreateColumnDbRef_SetsTableAndColumn()
+    {
+        var dbRef = F9860QueryEngine.CreateColumnDbRef("OBNM");
+        await Assert.That(dbRef.szTable.Value).IsEqualTo("F9860");
+        await Assert.That(dbRef.szDict.Value).IsEqualTo("OBNM");
+        await Assert.That(dbRef.idInstance).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task TryReadFixedValue_ValidLength_ReadsValue()
+    {
+        IntPtr buffer = Marshal.AllocHGlobal(20);
+        try
+        {
+            var bytes = System.Text.Encoding.Unicode.GetBytes("AB");
+            Marshal.Copy(bytes, 0, buffer, bytes.Length);
+
+            var value = F9860QueryEngine.TryReadFixedValue(buffer, 2, null);
+            await Assert.That(value).IsEqualTo("AB");
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    [Test]
+    public async Task TryReadFixedValue_ZeroLength_ReturnsEmpty()
+    {
+        IntPtr buffer = Marshal.AllocHGlobal(4);
+        try
+        {
+            var value = F9860QueryEngine.TryReadFixedValue(buffer, 0, null);
+            await Assert.That(value).IsEqualTo(string.Empty);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    [Test]
+    public async Task TryReadFixedValue_LengthOver4096_ReturnsEmpty()
+    {
+        IntPtr buffer = Marshal.AllocHGlobal(4);
+        try
+        {
+            var value = F9860QueryEngine.TryReadFixedValue(buffer, 5000, null);
+            await Assert.That(value).IsEqualTo(string.Empty);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    [Test]
+    public async Task LogBufferHex_DoesNotThrow()
+    {
+        IntPtr buffer = Marshal.AllocHGlobal(4);
+        try
+        {
+            Marshal.WriteByte(buffer, 0, 0x41);
+            Marshal.WriteByte(buffer, 1, 0);
+            var messages = new List<string>();
+            F9860QueryEngine.LogBufferHex(buffer, msg => messages.Add(msg));
+            await Assert.That(messages.Count).IsEqualTo(1);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    [Test]
+    public async Task LogValue_InvokesLog()
+    {
+        var messages = new List<string>();
+        F9860QueryEngine.LogValue(msg => messages.Add(msg), "Test", "hello");
+        await Assert.That(messages.Count).IsEqualTo(1);
+        await Assert.That(messages[0].Contains("hello", StringComparison.Ordinal)).IsTrue();
+    }
+
+    [Test]
+    public async Task ResolveDriverRequest_ReturnsSameHandle()
+    {
+        var hRequest = new HREQUEST { Handle = new IntPtr(42) };
+        var result = F9860QueryEngine.ResolveDriverRequest(hRequest);
+        await Assert.That(result.Handle).IsEqualTo(hRequest.Handle);
+    }
+
+    [Test]
+    public async Task NormalizeText_OnlyNullChars_ReturnsEmpty()
+    {
+        var value = F9860QueryEngine.NormalizeText("\0\0\0");
+        await Assert.That(value).IsEqualTo(string.Empty);
+    }
+
+    [Test]
+    public async Task BuildColumnLengthMap_DuplicateNames_LastWins()
+    {
+        var columns = new[]
+        {
+            new JdeColumn { Name = "AN8", Length = 10 },
+            new JdeColumn { Name = "AN8", Length = 20 }
+        };
+
+        var map = F9860QueryEngine.BuildColumnLengthMap(columns);
+        await Assert.That(map["AN8"]).IsEqualTo(20);
+    }
+
+    [Test]
+    public async Task ExtractObjectInfoCore_AllColumnsReturned_ReturnsValidInfo()
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [F9860Structures.Columns.OBNM] = "F0101",
+            [F9860Structures.Columns.FUNO] = "TBLE",
+            [F9860Structures.Columns.SY] = "01",
+            [F9860Structures.Columns.MD] = "Address Book Master"
+        };
+
+        var result = F9860QueryEngine.ExtractObjectInfoCore(
+            (col, _) => values.TryGetValue(col, out var v) ? v : string.Empty,
+            _ => 10,
+            null);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.ObjectName).IsEqualTo("F0101");
+        await Assert.That(result.ObjectType).IsEqualTo("TBLE");
+        await Assert.That(result.SystemCode).IsEqualTo("01");
+        await Assert.That(result.Description).IsEqualTo("Address Book Master");
+    }
+
+    [Test]
+    public async Task ExtractObjectInfoCore_EmptyObjectName_ReturnsNull()
+    {
+        var result = F9860QueryEngine.ExtractObjectInfoCore(
+            (_, _) => string.Empty,
+            _ => 10,
+            null);
+
+        await Assert.That(result is null).IsTrue();
+    }
+
+    [Test]
+    public async Task ExtractObjectInfoCore_EmptyObjectType_ReturnsNull()
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [F9860Structures.Columns.OBNM] = "F0101",
+            [F9860Structures.Columns.FUNO] = "",
+            [F9860Structures.Columns.SY] = "01",
+            [F9860Structures.Columns.MD] = "Test"
+        };
+
+        var result = F9860QueryEngine.ExtractObjectInfoCore(
+            (col, _) => values.TryGetValue(col, out var v) ? v : string.Empty,
+            _ => 10,
+            null);
+
+        await Assert.That(result is null).IsTrue();
+    }
+
+    [Test]
+    public async Task ExtractObjectInfoCore_ThrowingDelegate_ReturnsNull()
+    {
+        var result = F9860QueryEngine.ExtractObjectInfoCore(
+            (_, _) => throw new InvalidOperationException("test error"),
+            _ => 10,
+            null);
+
+        await Assert.That(result is null).IsTrue();
+    }
 }
