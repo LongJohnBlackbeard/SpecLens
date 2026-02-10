@@ -20,7 +20,7 @@ extending the library.
 | Data structure XML | `jdeSpecOpen*`, `jdeSpecFetchSingle`, `jdeSpecSelectKeyed`, `jdeSpecFetch`, `jdeSpecInitXMLConvertHandle` | Reads F98743 (DSTMPL). |
 | Project metadata | `JDB_OpenTable`, `JDB_SetSelectionX`, `JDB_SelectKeyed`, `JDB_Fetch` | F98220/F98221/F98222. PATHCD is optional and often contains legacy values. |
 | Spec repositories (zip) | `jdeSpecOpenRepository`, `jdeSpecOpenFile`, `jdeSpecCloseRepository` | Used when reading spec ZIP repositories (e.g., manifest). |
-| OMW export (future) | `OMWCallSaveObjectToRepositoryEx` (`jdeomw.dll`) | Available in the runtime but not yet wired into JdeClient.Core. |
+| OMW export | `OMWCallSaveObjectToRepositoryEx` (`jdeomw.dll`) | Wired to `JdeClient.ExportProjectToParAsync` with optional external save location (parameter 7096). |
 
 ## Notes by Workflow
 
@@ -55,10 +55,9 @@ Projects and project objects are table-driven (F98220 / F98221 / F98222). PATHCD
 is not a reliable primary key in practice; use it only as an optional filter
 when it matches your target environment.
 
-### OMW Export (Future)
+### OMW Export
 
 The JDE runtime ships an OMW export API (`OMWCallSaveObjectToRepositoryEx`) that
-creates repository artifacts (including spec XML). This is a candidate for
-future project or object export workflows, but it is not yet exposed in
-JdeClient.Core.
-
+creates repository artifacts (including spec XML). It is exposed via
+`JdeClient.ExportProjectToParAsync`, which optionally sets the external save zip
+location (OMW parameter 7096) before invoking the native API.

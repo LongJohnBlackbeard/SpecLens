@@ -218,6 +218,11 @@ internal class F9860QueryEngine : IF9860QueryEngine
     public HUSER UserHandle => _hUser;
 
     /// <summary>
+    /// JDE environment handle for this engine.
+    /// </summary>
+    public HENV EnvironmentHandle => _hEnv;
+
+    /// <summary>
     /// Query F9860 table for all objects of specified type
     /// </summary>
     /// <param name="objectType">Filter by object type (null for all)</param>
@@ -732,6 +737,34 @@ internal class F9860QueryEngine : IF9860QueryEngine
         return HandleFetchedObject(hRequest, objectType, maxResults, results, ref recordCount, ref nullStreak);
     }
 
+    internal static FetchOutcome HandleFetchResultCore(
+        int fetchResult,
+        Func<FetchOutcome> onSuccess,
+        Func<bool> onFailure,
+        Action? onNoMoreData,
+        Action<string>? log)
+    {
+        _ = log;
+
+        if (fetchResult == JDEDB_NO_MORE_DATA)
+        {
+            onNoMoreData?.Invoke();
+            return FetchOutcome.Break;
+        }
+
+        if (fetchResult == JDEDB_SKIPPED)
+        {
+            return FetchOutcome.Continue;
+        }
+
+        if (fetchResult != JDEDB_PASSED)
+        {
+            return onFailure() ? FetchOutcome.Continue : FetchOutcome.Break;
+        }
+
+        return onSuccess();
+    }
+
     private FetchOutcome HandleFetchedObject(
         HREQUEST hRequest,
         JdeObjectType? objectType,
@@ -741,6 +774,25 @@ internal class F9860QueryEngine : IF9860QueryEngine
         ref int nullStreak)
     {
         var objectInfo = ExtractObjectInfo(hRequest);
+        return HandleFetchedObjectCore(
+            objectInfo,
+            objectType,
+            maxResults,
+            results,
+            ref recordCount,
+            ref nullStreak,
+            _options.EnableDebug ? DebugLog : null);
+    }
+
+    internal static FetchOutcome HandleFetchedObjectCore(
+        JdeObjectInfo? objectInfo,
+        JdeObjectType? objectType,
+        int maxResults,
+        List<JdeObjectInfo> results,
+        ref int recordCount,
+        ref int nullStreak,
+        Action<string>? log)
+    {
         if (objectInfo == null)
         {
             nullStreak++;
@@ -750,7 +802,7 @@ internal class F9860QueryEngine : IF9860QueryEngine
         nullStreak = 0;
         if (recordCount < 3)
         {
-            DebugLog($"[DEBUG] F9860 row {recordCount + 1}: {objectInfo.ObjectName} ({objectInfo.ObjectType})");
+            log?.Invoke($"[DEBUG] F9860 row {recordCount + 1}: {objectInfo.ObjectName} ({objectInfo.ObjectType})");
         }
 
         if (ShouldSkipObject(objectInfo, objectType))
@@ -766,19 +818,24 @@ internal class F9860QueryEngine : IF9860QueryEngine
 
     private bool HandleFetchFailure(HREQUEST hRequest, int result, ref int failureCount)
     {
-        failureCount++;
         if (JDB_GetLastDBError(hRequest, out int errorNum) == JDEDB_PASSED)
         {
             DebugLog($"[DEBUG] JDB_FetchCols failed (result={result}, error={errorNum})");
         }
 
-        if (failureCount >= 1000)
+        var shouldContinue = HandleFetchFailureCore(ref failureCount);
+        if (!shouldContinue)
         {
             DebugLog("[DEBUG] Too many fetch failures; stopping.");
-            return false;
         }
 
-        return true;
+        return shouldContinue;
+    }
+
+    internal static bool HandleFetchFailureCore(ref int failureCount, int maxFailures = 1000)
+    {
+        failureCount++;
+        return failureCount < maxFailures;
     }
 
     private void LogNoMoreData(HREQUEST hRequest, int recordCount)
@@ -789,7 +846,7 @@ internal class F9860QueryEngine : IF9860QueryEngine
         }
     }
 
-    private enum FetchOutcome
+    internal enum FetchOutcome
     {
         Continue,
         Break

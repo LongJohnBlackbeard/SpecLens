@@ -365,6 +365,85 @@ public class SpecTableMetadataServiceTests
         }
     }
 
+    [Test]
+    public async Task BuildIndexInfos_SkipsZeroColumnIndex()
+    {
+        var indexes = new List<GLOBALINDEX>
+        {
+            CreateIndex(id: 7, numCols: 0, isPrimary: false, name: "IDX", keys: new[] { "AN8" })
+        };
+
+        var results = SpecTableMetadataService.BuildIndexInfos(indexes);
+
+        await Assert.That(results.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task BuildIndexInfos_SkipsNullDetailArray()
+    {
+        var index = CreateIndex(id: 8, numCols: 1, isPrimary: false, name: "IDX", keys: new[] { "AN8" });
+        index.lpGlobalIndexDetail = null;
+
+        var results = SpecTableMetadataService.BuildIndexInfos(new List<GLOBALINDEX> { index });
+
+        await Assert.That(results.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task TryGetPrimaryIndexFromIndexes_PrimaryZeroColumns_ReturnsFalse()
+    {
+        var indexes = new List<GLOBALINDEX>
+        {
+            CreateIndex(id: 10, numCols: 0, isPrimary: true, name: "PRIMARY", keys: new[] { "AN8" })
+        };
+
+        var success = SpecTableMetadataService.TryGetPrimaryIndexFromIndexes(indexes, out _, out var keys);
+
+        await Assert.That(success).IsFalse();
+        await Assert.That(keys.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task TryGetPrimaryIndexFromIndexes_PrimaryNullDetails_ReturnsFalse()
+    {
+        var index = CreateIndex(id: 11, numCols: 1, isPrimary: true, name: "PRIMARY", keys: new[] { "AN8" });
+        index.lpGlobalIndexDetail = null;
+
+        var success = SpecTableMetadataService.TryGetPrimaryIndexFromIndexes(new List<GLOBALINDEX> { index }, out _, out var keys);
+
+        await Assert.That(success).IsFalse();
+        await Assert.That(keys.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ReadColumnCache_EmptyDict_ReturnsEmpty()
+    {
+        int cacheSize = Marshal.SizeOf<COLUMNCACHE_HEADER>();
+        IntPtr cachePtr = Marshal.AllocHGlobal(cacheSize);
+        try
+        {
+            var cache = new COLUMNCACHE_HEADER
+            {
+                szDict = new NID(string.Empty),
+                idEverestType = 9,
+                nLength = 8,
+                nDecimals = 0,
+                nDispDecimals = 0
+            };
+            Marshal.StructureToPtr(cache, cachePtr, false);
+
+            var result = SpecTableMetadataService.ReadColumnCache(cachePtr, useNativeLayout: false);
+
+            await Assert.That(result.DictItem).IsEqualTo(string.Empty);
+            await Assert.That(result.EvdType).IsEqualTo(9);
+            await Assert.That(result.Length).IsEqualTo(8);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(cachePtr);
+        }
+    }
+
     private static GLOBALINDEX CreateIndex(int id, ushort numCols, bool isPrimary, string? name, string[] keys)
     {
         var details = new GLOBALINDEXDETAIL[20];

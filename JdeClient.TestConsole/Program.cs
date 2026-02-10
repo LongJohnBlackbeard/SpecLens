@@ -59,10 +59,11 @@ class Program
         {
             using var client = new JdeClient.Core.JdeClient(options);
 
-            // Run all tests
-            await TestConnection(client);
-            await TestWpfWorkflow(client);
-            await TestBusinessViewWorkflow(client);
+            if (!await PromptConnectAsync(client))
+            {
+                Console.WriteLine("Exiting without connecting.");
+                return 1;
+            }
 
             // Interactive menu
             await InteractiveMenu(client);
@@ -210,6 +211,35 @@ class Program
         }
 
         Console.WriteLine();
+    }
+
+    static async Task<bool> PromptConnectAsync(JdeClient.Core.JdeClient client)
+    {
+        Console.Write("Connect to JDE now? (Y/n): ");
+        string? input = Console.ReadLine();
+        if (!string.IsNullOrWhiteSpace(input) &&
+            input.Trim().StartsWith("n", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        Console.Write("Connecting to JDE... ");
+        try
+        {
+            await client.ConnectAsync();
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("SUCCESS");
+            Console.ResetColor();
+            return true;
+        }
+        catch (JdeConnectionException ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("FAILED");
+            Console.ResetColor();
+            Console.WriteLine($"  Error: {ex.Message}");
+            return false;
+        }
     }
 
     static async Task TestWpfWorkflow(JdeClient.Core.JdeClient client)
@@ -537,9 +567,10 @@ class Program
             Console.WriteLine("13. Dump data dictionary details");
             Console.WriteLine("14. Load event rules tree");
             Console.WriteLine("15. Load event rules lines");
-            Console.WriteLine("16. Disconnect and exit");
+            Console.WriteLine("16. Export project to PAR (OMW)");
+            Console.WriteLine("17. Disconnect and exit");
             Console.WriteLine();
-            Console.Write("Select option (1-16): ");
+            Console.Write("Select option (1-17): ");
 
             var choice = Console.ReadLine();
 
@@ -592,6 +623,9 @@ class Program
                     await LoadEventRulesLines(client);
                     break;
                 case "16":
+                    await ExportProjectToPar(client);
+                    break;
+                case "17":
                     Console.WriteLine("\nDisconnecting...");
                     await client.DisconnectAsync();
                     Console.WriteLine("Goodbye!");
@@ -869,6 +903,128 @@ class Program
                 }
             }
         }
+    }
+
+    static async Task ExportProjectToPar(JdeClient.Core.JdeClient client)
+    {
+        Console.Write("\nEnter OMW project name (OMWPRJID): ");
+        string? projectName = Console.ReadLine()?.Trim();
+        if (string.IsNullOrWhiteSpace(projectName))
+        {
+            Console.WriteLine("Project name is required.");
+            return;
+        }
+
+        Console.Write("Path code (blank to auto-detect): ");
+        string? pathCode = Console.ReadLine()?.Trim();
+        if (string.IsNullOrWhiteSpace(pathCode))
+        {
+            pathCode = await ResolveProjectPathCodeAsync(client, projectName);
+            if (string.IsNullOrWhiteSpace(pathCode))
+            {
+                Console.WriteLine("Path code is required to export the project.");
+                return;
+            }
+
+            Console.WriteLine($"Using path code: {pathCode}");
+        }
+
+        Console.Write("Output folder or .par file (blank for JDE default): ");
+        string? outputPath = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            outputPath = null;
+        }
+
+        Console.WriteLine("\nExporting project...");
+        try
+        {
+            var result = await client.ExportProjectToParAsync(
+                projectName,
+                pathCode,
+                outputPath: outputPath);
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("SUCCESS");
+            Console.ResetColor();
+            Console.WriteLine($"  Project: {result.ProjectName}");
+            Console.WriteLine($"  Object: {result.ObjectId}");
+            Console.WriteLine($"  Output: {result.OutputPath ?? "<JDE default>"}");
+            Console.WriteLine($"  File already exists: {result.FileAlreadyExists}");
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("FAILED");
+            Console.ResetColor();
+            Console.WriteLine($"  Error: {ex.Message}");
+            if (ex is JdeApiException apiException)
+            {
+                if (!string.IsNullOrWhiteSpace(apiException.ApiFunction))
+                {
+                    Console.WriteLine($"  API: {apiException.ApiFunction}");
+                }
+
+                if (apiException.ResultCode.HasValue)
+                {
+                    Console.WriteLine($"  Result: {apiException.ResultCode.Value}");
+                }
+            }
+
+            if (ex.InnerException != null)
+            {
+                Console.WriteLine($"  Inner: {ex.InnerException.Message}");
+            }
+        }
+    }
+
+    static async Task<string?> ResolveProjectPathCodeAsync(JdeClient.Core.JdeClient client, string projectName)
+    {
+        Console.WriteLine("\nResolving path code from project objects...");
+        List<JdeProjectObjectInfo> objects;
+        try
+        {
+            objects = await client.GetProjectObjectsAsync(projectName);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load project objects: {ex.Message}");
+            return null;
+        }
+
+        var pathCodes = objects
+            .Select(o => o.PathCode)
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Select(code => code!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(code => code)
+            .ToList();
+
+        if (pathCodes.Count == 0)
+        {
+            Console.WriteLine("No path codes found for this project.");
+            return null;
+        }
+
+        if (pathCodes.Count == 1)
+        {
+            return pathCodes[0];
+        }
+
+        Console.WriteLine($"Found {pathCodes.Count} path codes:");
+        for (int i = 0; i < pathCodes.Count; i++)
+        {
+            Console.WriteLine($"  {i + 1,2}. {pathCodes[i]}");
+        }
+
+        Console.Write("Select path code number or enter a value: ");
+        string? selection = Console.ReadLine()?.Trim();
+        if (int.TryParse(selection, out int index) && index >= 1 && index <= pathCodes.Count)
+        {
+            return pathCodes[index - 1];
+        }
+
+        return string.IsNullOrWhiteSpace(selection) ? null : selection;
     }
 
     static string GetTextTypeLabel(char textType)

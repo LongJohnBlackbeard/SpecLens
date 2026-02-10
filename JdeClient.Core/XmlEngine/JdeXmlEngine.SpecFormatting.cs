@@ -114,7 +114,7 @@ public partial class JdeXmlEngine
         return lines;
     }
 
-    private static string FormatFileIoOperation(string? operation)
+    internal static string FormatFileIoOperation(string? operation)
     {
         if (string.IsNullOrWhiteSpace(operation))
         {
@@ -166,7 +166,7 @@ public partial class JdeXmlEngine
         return $" [Index {indexId}: {keyLabel}]";
     }
 
-    private static string FormatFileIoParamLine(string? copyWord, string source, string target)
+    internal static string FormatFileIoParamLine(string? copyWord, string source, string target)
     {
         var direction = copyWord?.Trim().ToUpperInvariant();
         return direction switch
@@ -177,7 +177,7 @@ public partial class JdeXmlEngine
         };
     }
 
-    private static string FormatBusinessFunctionParamLine(string? copyWord, string eventLabel, string paramLabel)
+    internal static string FormatBusinessFunctionParamLine(string? copyWord, string eventLabel, string paramLabel)
     {
         var direction = copyWord?.Trim().ToUpperInvariant();
         return direction switch
@@ -229,7 +229,7 @@ public partial class JdeXmlEngine
         }
     }
 
-    private static string FormatLiteralValue(XElement literalElement)
+    internal static string FormatLiteralValue(XElement literalElement)
     {
         var valueElement = literalElement.Descendants().FirstOrDefault(element => element.Name.LocalName.StartsWith("Literal", StringComparison.OrdinalIgnoreCase));
         if (valueElement == null)
@@ -246,7 +246,7 @@ public partial class JdeXmlEngine
         return value;
     }
 
-    private static string PrefixQualifier(string qualifier, string value)
+    internal static string PrefixQualifier(string qualifier, string value)
     {
         if (string.IsNullOrWhiteSpace(qualifier))
         {

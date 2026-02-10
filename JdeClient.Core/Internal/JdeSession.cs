@@ -16,6 +16,7 @@ internal class JdeSession : IJdeSession
 {
     private IF9860QueryEngine? _queryEngine;
     private readonly JdeClientOptions _options;
+    private readonly Func<JdeClientOptions, IF9860QueryEngine> _queryEngineFactory;
     private bool _isConnected;
     private bool _disposed;
     private BlockingCollection<IWorkItem>? _workQueue;
@@ -40,6 +41,11 @@ internal class JdeSession : IJdeSession
     public HUSER UserHandle => QueryEngine.UserHandle;
 
     /// <summary>
+    /// Gets the JDE environment handle when connected.
+    /// </summary>
+    public HENV EnvironmentHandle => QueryEngine.EnvironmentHandle;
+
+    /// <summary>
     /// Connect to JDE by initializing F9860 query engine
     /// Requires JDE Fat Client (activConsole.exe) to be running
     /// </summary>
@@ -47,8 +53,14 @@ internal class JdeSession : IJdeSession
     /// <param name="cancellationToken">Cancellation token</param>
     /// <exception cref="JdeConnectionException">Thrown if connection fails</exception>
     public JdeSession(JdeClientOptions options)
+        : this(options, static opt => new F9860QueryEngine(opt))
+    {
+    }
+
+    internal JdeSession(JdeClientOptions options, Func<JdeClientOptions, IF9860QueryEngine> queryEngineFactory)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _queryEngineFactory = queryEngineFactory ?? throw new ArgumentNullException(nameof(queryEngineFactory));
     }
 
     public Task ConnectAsync(string? specPath = null, CancellationToken cancellationToken = default)
@@ -143,7 +155,7 @@ internal class JdeSession : IJdeSession
         {
             try
             {
-                _queryEngine = new F9860QueryEngine(_options);
+                _queryEngine = _queryEngineFactory(_options);
                 LogInteropSizes(_options);
                 _queryEngine.Initialize();
             }
@@ -258,7 +270,7 @@ internal class JdeSession : IJdeSession
         }
     }
 
-    private static void LogInteropSizes(JdeClientOptions options)
+    internal static void LogInteropSizes(JdeClientOptions options)
     {
         if (!options.EnableDebug)
         {

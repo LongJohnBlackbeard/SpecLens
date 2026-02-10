@@ -20,6 +20,11 @@ internal interface IF9860QueryEngine : IDisposable
     HUSER UserHandle { get; }
 
     /// <summary>
+    /// JDE environment handle associated with the engine.
+    /// </summary>
+    HENV EnvironmentHandle { get; }
+
+    /// <summary>
     /// Query objects from F9860 with optional filters.
     /// </summary>
     List<JdeObjectInfo> QueryObjects(

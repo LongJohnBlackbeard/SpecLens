@@ -82,7 +82,7 @@ public partial class JdeClient
     /// <summary>
     /// Resolve a data structure template name from an event rules node.
     /// </summary>
-    private static string ResolveTemplateName(JdeEventRulesNode node)
+    internal static string ResolveTemplateName(JdeEventRulesNode node)
     {
         if (!string.IsNullOrWhiteSpace(node.DataStructureName))
         {
@@ -179,7 +179,7 @@ public partial class JdeClient
     /// <summary>
     /// Replace leading tabs with visual indentation guides for display.
     /// </summary>
-    private static string ApplyIndentGuides(string text)
+    internal static string ApplyIndentGuides(string text)
     {
         if (string.IsNullOrEmpty(text))
         {

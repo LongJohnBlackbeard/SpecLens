@@ -332,6 +332,14 @@ Task<List<JdeProjectObjectInfo>> GetProjectObjectsAsync(
     string? dataSourceOverride = null,
     CancellationToken cancellationToken = default)
 
+Task<JdeOmwExportResult> ExportProjectToParAsync(
+    string projectName,
+    string pathCode,
+    string? outputPath = null,
+    bool insertOnly = false,
+    int include64BitOption = 2,
+    CancellationToken cancellationToken = default)
+
 // User Defined Codes (UDC)
 Task<List<JdeUserDefinedCodeTypes>> GetUserDefinedCodeTypesAsync(
     string? productCode = null,
@@ -363,6 +371,29 @@ Task<IReadOnlyList<JdeSpecXmlDocument>> GetDataStructureXmlAsync(
     string templateName,
     CancellationToken cancellationToken = default)
 ```
+
+### OMW export (solution/project)
+
+`ExportProjectToParAsync` mirrors the OMW "Save" export behavior and writes a `.par` archive for the
+requested solution/project.
+
+```csharp
+using var client = new JdeClient();
+await client.ConnectAsync();
+
+// outputPath can be a directory or a full .par file path
+var result = await client.ExportProjectToParAsync(
+    projectName: "2026-ABC-001",
+    pathCode: "DV920",
+    outputPath: @"C:\temp");
+
+Console.WriteLine(result.OutputPath);
+```
+
+Notes:
+- `outputPath` can be a directory or a `.par` file name. Directories are expanded to
+  `PRJ_{ProjectName}_60_99.par`.
+- OMW export requires `jdeomw.dll` (shipped with Fat Client) and an active fat client session.
 
 ### Models
 
@@ -449,6 +480,19 @@ public class JdeProjectObjectInfo
 }
 ```
 
+#### JdeOmwExportResult
+
+```csharp
+public class JdeOmwExportResult
+{
+    public string ObjectId { get; set; }       // exported object id
+    public string ObjectType { get; set; }     // e.g., "PRJ"
+    public string ProjectName { get; set; }    // project name used for export
+    public string? OutputPath { get; set; }    // resolved output path when provided
+    public bool FileAlreadyExists { get; set; }
+}
+```
+
 ## Architecture
 
 ### Layer Separation
@@ -493,7 +537,8 @@ For a mapping of these workflows to the underlying JDE C APIs, see
 - Windows OS (JDE Fat Client is Windows-only)
 - JDE EnterpriseOne Fat Client installed
 - `activConsole.exe` must be running and user logged in
-- JDE runtime available (jdekrnl.dll ships with the fat client; your host process must be able to resolve it)
+- JDE runtime available (`jdekrnl.dll` ships with the fat client; your host process must be able to resolve it)
+- OMW export requires `jdeomw.dll` (also shipped with the fat client)
 
 ### Development Requirements
 
