@@ -226,4 +226,75 @@ public class JdeClientEventRulesFormattingTests
         await Assert.That(result.Text.Contains("|   foo [AL1] = bar", StringComparison.Ordinal)).IsTrue();
         await Assert.That(result.Text.Contains("End If", StringComparison.Ordinal)).IsTrue();
     }
+
+    [Test]
+    public async Task ResolveTemplateName_DataStructureName_Wins()
+    {
+        var node = new JdeEventRulesNode
+        {
+            Name = "B0001",
+            DataStructureName = "D0001"
+        };
+
+        await Assert.That(JdeClient.ResolveTemplateName(node)).IsEqualTo("D0001");
+    }
+
+    [Test]
+    public async Task ResolveTemplateName_EmptyName_ReturnsEmpty()
+    {
+        var node = new JdeEventRulesNode
+        {
+            Name = string.Empty,
+            DataStructureName = null
+        };
+
+        await Assert.That(JdeClient.ResolveTemplateName(node)).IsEqualTo(string.Empty);
+    }
+
+    [Test]
+    public async Task ResolveTemplateName_BPrefixedName_ConvertsToD()
+    {
+        var node = new JdeEventRulesNode
+        {
+            Name = "B1234",
+            DataStructureName = null
+        };
+
+        await Assert.That(JdeClient.ResolveTemplateName(node)).IsEqualTo("D1234");
+    }
+
+    [Test]
+    public async Task ResolveTemplateName_OtherName_ReturnsSame()
+    {
+        var node = new JdeEventRulesNode
+        {
+            Name = "D5678",
+            DataStructureName = null
+        };
+
+        await Assert.That(JdeClient.ResolveTemplateName(node)).IsEqualTo("D5678");
+    }
+
+    [Test]
+    public async Task ApplyIndentGuides_EmptyInput_ReturnsEmpty()
+    {
+        await Assert.That(JdeClient.ApplyIndentGuides(string.Empty)).IsEqualTo(string.Empty);
+    }
+
+    [Test]
+    public async Task ApplyIndentGuides_NoTabs_Unchanged()
+    {
+        var input = $"Line1{Environment.NewLine}Line2";
+
+        await Assert.That(JdeClient.ApplyIndentGuides(input)).IsEqualTo(input);
+    }
+
+    [Test]
+    public async Task ApplyIndentGuides_ReplacesTabs()
+    {
+        var input = $"\tLine1{Environment.NewLine}\t\tLine2";
+        var expected = $"|   Line1{Environment.NewLine}|   |   Line2";
+
+        await Assert.That(JdeClient.ApplyIndentGuides(input)).IsEqualTo(expected);
+    }
 }

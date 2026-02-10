@@ -221,7 +221,7 @@ public partial class JdeXmlEngine
         }
     }
 
-    private static string IndentLine(string line, int indentLevel)
+    internal static string IndentLine(string line, int indentLevel)
     {
         var safeIndent = Math.Max(indentLevel, 0);
         return $"{new string('\t', safeIndent)}{line}";
@@ -240,7 +240,7 @@ public partial class JdeXmlEngine
         }
     }
 
-    private static (string? Qualifier, string Remainder) SplitQualifier(string value)
+    internal static (string? Qualifier, string Remainder) SplitQualifier(string value)
     {
         var trimmed = value?.Trim() ?? string.Empty;
         if (trimmed.Length == 0)
@@ -273,7 +273,7 @@ public partial class JdeXmlEngine
     }
 
     // Spec XML can contain padding or non-XML bytes; normalize to the first element.
-    private static string NormalizeXmlPayload(string xml)
+    internal static string NormalizeXmlPayload(string xml)
     {
         var cleaned = xml
             .Replace("\0", string.Empty)

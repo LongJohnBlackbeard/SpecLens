@@ -22,6 +22,7 @@ can be reported through the Issues tab.
 - Grid Sorting, Sequencing, and Column Freezing
 - Dark/Light theme support
 - Custom Syntax Highlighting for ER
+- OMW solution/project export to `.par` (`JdeClient.Core`)
 
 ## Future Features
 - All Object Event Rules Browsing
@@ -65,6 +66,10 @@ dotnet run --project SpecLens.Avalonia/SpecLens.Avalonia.csproj
 
 dotnet run --project JdeClient.TestConsole/JdeClient.TestConsole.csproj
 ```
+
+## OMW solution/project export (PAR)
+- Programmatic usage is available via `JdeClient.ExportProjectToParAsync` (see `JdeClient.Core/README.md`).
+- Use `JdeClient.TestConsole` option `16` to test exporting an OMW project to a `.par` file.
 
 ## Logging
 Spec Lens has separate logs for the desktop app and the JDE client debug output.

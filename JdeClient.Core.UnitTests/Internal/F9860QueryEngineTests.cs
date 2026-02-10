@@ -1,5 +1,7 @@
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using JdeClient.Core;
 using JdeClient.Core.Internal;
 using JdeClient.Core.Interop;
 using JdeClient.Core.Models;
@@ -9,6 +11,169 @@ namespace JdeClient.Core.UnitTests.Internal;
 
 public class F9860QueryEngineTests
 {
+    [Test]
+    public async Task Constructor_NullOptions_Throws()
+    {
+        var exception = await Assert.That(() => new F9860QueryEngine(null!))
+            .ThrowsExactly<ArgumentNullException>();
+
+        await Assert.That(exception).IsNotNull();
+        await Assert.That(exception!.ParamName).IsEqualTo("options");
+    }
+
+    [Test]
+    public async Task Constructor_ValidOptions_Creates()
+    {
+        var engine = new F9860QueryEngine(new JdeClientOptions());
+        await Assert.That(engine).IsNotNull();
+    }
+
+    [Test]
+    public async Task HandleProperties_ExposeBackedFields()
+    {
+        var engine = new F9860QueryEngine(new JdeClientOptions());
+        SetPrivateField(engine, "_hUser", new HUSER { Handle = new IntPtr(11) });
+        SetPrivateField(engine, "_hEnv", new HENV { Handle = new IntPtr(22) });
+
+        await Assert.That(engine.UserHandle.Handle).IsEqualTo(new IntPtr(11));
+        await Assert.That(engine.EnvironmentHandle.Handle).IsEqualTo(new IntPtr(22));
+    }
+
+    [Test]
+    public async Task Initialize_WhenAlreadyInitialized_ReturnsWithoutInterop()
+    {
+        var engine = new F9860QueryEngine(new JdeClientOptions());
+        SetPrivateField(engine, "_isInitialized", true);
+
+        engine.Initialize();
+
+        await Assert.That(GetPrivateField<bool>(engine, "_isInitialized")).IsTrue();
+    }
+
+    [Test]
+    public async Task Dispose_WhenInitializedButNotOwned_ClearsInitializedState()
+    {
+        var engine = new F9860QueryEngine(new JdeClientOptions());
+        SetPrivateField(engine, "_isInitialized", true);
+        SetPrivateField(engine, "_ownsUser", false);
+        SetPrivateField(engine, "_ownsEnv", false);
+        SetPrivateField(engine, "_hUser", new HUSER { Handle = new IntPtr(1) });
+        SetPrivateField(engine, "_hEnv", new HENV { Handle = new IntPtr(2) });
+
+        engine.Dispose();
+
+        await Assert.That(GetPrivateField<bool>(engine, "_isInitialized")).IsFalse();
+        await Assert.That(GetPrivateField<bool>(engine, "_disposed")).IsTrue();
+    }
+
+    [Test]
+    public async Task Dispose_DoubleDispose_DoesNotThrow()
+    {
+        var engine = new F9860QueryEngine(new JdeClientOptions());
+
+        engine.Dispose();
+        engine.Dispose();
+
+        await Assert.That(GetPrivateField<bool>(engine, "_disposed")).IsTrue();
+    }
+
+    [Test]
+    public async Task DebugLog_Enabled_WritesMessage()
+    {
+        var messages = new List<string>();
+        var options = new JdeClientOptions
+        {
+            EnableDebug = true,
+            LogSink = messages.Add
+        };
+        var engine = new F9860QueryEngine(options);
+
+        InvokePrivateVoid(engine, "DebugLog", "hello");
+
+        await Assert.That(messages.Count).IsEqualTo(1);
+        await Assert.That(messages[0]).IsEqualTo("hello");
+    }
+
+    [Test]
+    public async Task DebugLog_Disabled_DoesNotWriteMessage()
+    {
+        var messages = new List<string>();
+        var options = new JdeClientOptions
+        {
+            EnableDebug = false,
+            LogSink = messages.Add
+        };
+        var engine = new F9860QueryEngine(options);
+
+        InvokePrivateVoid(engine, "DebugLog", "hello");
+
+        await Assert.That(messages.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task F9860Layout_WhenDisabled_ReturnsNull()
+    {
+        var engine = new F9860QueryEngine(new JdeClientOptions { UseRowLayoutF9860 = false });
+        var property = typeof(F9860QueryEngine).GetProperty("F9860Layout", BindingFlags.Instance | BindingFlags.NonPublic);
+        var value = property!.GetValue(engine);
+
+        await Assert.That(value).IsNull();
+    }
+
+    [Test]
+    public async Task FreeEnvIfOwned_WhenNotOwned_DoesNothing()
+    {
+        var engine = new F9860QueryEngine(new JdeClientOptions());
+        SetPrivateField(engine, "_ownsEnv", false);
+
+        InvokePrivateVoid(engine, "FreeEnvIfOwned");
+
+        await Assert.That(GetPrivateField<bool>(engine, "_ownsEnv")).IsFalse();
+    }
+
+    [Test]
+    public async Task HandleFetchResult_NoMoreDataWithRecords_BreaksWithoutInterop()
+    {
+        var engine = new F9860QueryEngine(new JdeClientOptions());
+        var args = new object?[]
+        {
+            JDEDB_NO_MORE_DATA,
+            new HREQUEST(),
+            null,
+            0,
+            new List<JdeObjectInfo>(),
+            1,
+            0,
+            0
+        };
+
+        var outcome = (F9860QueryEngine.FetchOutcome)InvokePrivate(engine, "HandleFetchResult", args)!;
+
+        await Assert.That(outcome).IsEqualTo(F9860QueryEngine.FetchOutcome.Break);
+        await Assert.That((int)args[5]!).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task HandleFetchResult_Skipped_Continues()
+    {
+        var engine = new F9860QueryEngine(new JdeClientOptions());
+        var args = new object?[]
+        {
+            JDEDB_SKIPPED,
+            new HREQUEST(),
+            null,
+            0,
+            new List<JdeObjectInfo>(),
+            0,
+            0,
+            0
+        };
+
+        var outcome = (F9860QueryEngine.FetchOutcome)InvokePrivate(engine, "HandleFetchResult", args)!;
+
+        await Assert.That(outcome).IsEqualTo(F9860QueryEngine.FetchOutcome.Continue);
+    }
+
     [Test]
     public async Task NormalizeText_NullOrWhitespace_ReturnsEmpty()
     {
@@ -602,5 +767,254 @@ public class F9860QueryEngineTests
             null);
 
         await Assert.That(result is null).IsTrue();
+    }
+
+    [Test]
+    public async Task HandleFetchedObjectCore_NullObject_IncrementsStreak()
+    {
+        var results = new List<JdeObjectInfo>();
+        int recordCount = 0;
+        int nullStreak = 2;
+
+        var outcome = F9860QueryEngine.HandleFetchedObjectCore(
+            null,
+            null,
+            maxResults: 0,
+            results,
+            ref recordCount,
+            ref nullStreak,
+            null);
+
+        await Assert.That(outcome).IsEqualTo(F9860QueryEngine.FetchOutcome.Continue);
+        await Assert.That(nullStreak).IsEqualTo(3);
+        await Assert.That(recordCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task HandleFetchedObjectCore_NullStreakAtLimit_Breaks()
+    {
+        var results = new List<JdeObjectInfo>();
+        int recordCount = 0;
+        int nullStreak = 999;
+
+        var outcome = F9860QueryEngine.HandleFetchedObjectCore(
+            null,
+            null,
+            maxResults: 0,
+            results,
+            ref recordCount,
+            ref nullStreak,
+            null);
+
+        await Assert.That(outcome).IsEqualTo(F9860QueryEngine.FetchOutcome.Break);
+        await Assert.That(nullStreak).IsEqualTo(1000);
+    }
+
+    [Test]
+    public async Task HandleFetchedObjectCore_SkippedType_DoesNotAdd()
+    {
+        var results = new List<JdeObjectInfo>();
+        int recordCount = 0;
+        int nullStreak = 0;
+        var info = new JdeObjectInfo { ObjectName = "F0101", ObjectType = F9860Structures.ObjectTypes.Table };
+
+        var outcome = F9860QueryEngine.HandleFetchedObjectCore(
+            info,
+            JdeObjectType.BusinessFunction,
+            maxResults: 0,
+            results,
+            ref recordCount,
+            ref nullStreak,
+            null);
+
+        await Assert.That(outcome).IsEqualTo(F9860QueryEngine.FetchOutcome.Continue);
+        await Assert.That(results.Count).IsEqualTo(0);
+        await Assert.That(recordCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task HandleFetchedObjectCore_AddsResultAndResetsStreak()
+    {
+        var results = new List<JdeObjectInfo>();
+        int recordCount = 0;
+        int nullStreak = 5;
+        var info = new JdeObjectInfo { ObjectName = "F0101", ObjectType = F9860Structures.ObjectTypes.Table };
+
+        var outcome = F9860QueryEngine.HandleFetchedObjectCore(
+            info,
+            null,
+            maxResults: 0,
+            results,
+            ref recordCount,
+            ref nullStreak,
+            null);
+
+        await Assert.That(outcome).IsEqualTo(F9860QueryEngine.FetchOutcome.Continue);
+        await Assert.That(results.Count).IsEqualTo(1);
+        await Assert.That(recordCount).IsEqualTo(1);
+        await Assert.That(nullStreak).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task HandleFetchedObjectCore_RespectsMaxResults()
+    {
+        var results = new List<JdeObjectInfo>();
+        int recordCount = 4;
+        int nullStreak = 0;
+        var info = new JdeObjectInfo { ObjectName = "F0101", ObjectType = F9860Structures.ObjectTypes.Table };
+
+        var outcome = F9860QueryEngine.HandleFetchedObjectCore(
+            info,
+            null,
+            maxResults: 5,
+            results,
+            ref recordCount,
+            ref nullStreak,
+            null);
+
+        await Assert.That(outcome).IsEqualTo(F9860QueryEngine.FetchOutcome.Break);
+        await Assert.That(recordCount).IsEqualTo(5);
+    }
+
+    [Test]
+    public async Task HandleFetchedObjectCore_LogsFirstThree()
+    {
+        var results = new List<JdeObjectInfo>();
+        int recordCount = 0;
+        int nullStreak = 0;
+        var info = new JdeObjectInfo { ObjectName = "F0101", ObjectType = F9860Structures.ObjectTypes.Table };
+        var messages = new List<string>();
+
+        F9860QueryEngine.HandleFetchedObjectCore(
+            info,
+            null,
+            maxResults: 0,
+            results,
+            ref recordCount,
+            ref nullStreak,
+            msg => messages.Add(msg));
+
+        await Assert.That(messages.Count).IsEqualTo(1);
+
+        messages.Clear();
+        recordCount = 3;
+        F9860QueryEngine.HandleFetchedObjectCore(
+            info,
+            null,
+            maxResults: 0,
+            results,
+            ref recordCount,
+            ref nullStreak,
+            msg => messages.Add(msg));
+
+        await Assert.That(messages.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task HandleFetchFailureCore_UnderLimit_ReturnsTrue()
+    {
+        int failureCount = 0;
+
+        var shouldContinue = F9860QueryEngine.HandleFetchFailureCore(ref failureCount, maxFailures: 3);
+
+        await Assert.That(shouldContinue).IsTrue();
+        await Assert.That(failureCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task HandleFetchFailureCore_AtLimit_ReturnsFalse()
+    {
+        int failureCount = 2;
+
+        var shouldContinue = F9860QueryEngine.HandleFetchFailureCore(ref failureCount, maxFailures: 3);
+
+        await Assert.That(shouldContinue).IsFalse();
+        await Assert.That(failureCount).IsEqualTo(3);
+    }
+
+    [Test]
+    public async Task HandleFetchResultCore_NoMoreData_Breaks()
+    {
+        bool noMoreDataCalled = false;
+
+        var outcome = F9860QueryEngine.HandleFetchResultCore(
+            JDEDB_NO_MORE_DATA,
+            () => F9860QueryEngine.FetchOutcome.Continue,
+            () => true,
+            () => noMoreDataCalled = true,
+            null);
+
+        await Assert.That(outcome).IsEqualTo(F9860QueryEngine.FetchOutcome.Break);
+        await Assert.That(noMoreDataCalled).IsTrue();
+    }
+
+    [Test]
+    public async Task HandleFetchResultCore_Skipped_Continues()
+    {
+        var outcome = F9860QueryEngine.HandleFetchResultCore(
+            JDEDB_SKIPPED,
+            () => F9860QueryEngine.FetchOutcome.Break,
+            () => false,
+            null,
+            null);
+
+        await Assert.That(outcome).IsEqualTo(F9860QueryEngine.FetchOutcome.Continue);
+    }
+
+    [Test]
+    public async Task HandleFetchResultCore_FailureDelegates_ControlOutcome()
+    {
+        var continueOutcome = F9860QueryEngine.HandleFetchResultCore(
+            -1,
+            () => F9860QueryEngine.FetchOutcome.Break,
+            () => true,
+            null,
+            null);
+
+        var breakOutcome = F9860QueryEngine.HandleFetchResultCore(
+            -1,
+            () => F9860QueryEngine.FetchOutcome.Continue,
+            () => false,
+            null,
+            null);
+
+        await Assert.That(continueOutcome).IsEqualTo(F9860QueryEngine.FetchOutcome.Continue);
+        await Assert.That(breakOutcome).IsEqualTo(F9860QueryEngine.FetchOutcome.Break);
+    }
+
+    [Test]
+    public async Task HandleFetchResultCore_Success_ReturnsOutcome()
+    {
+        var outcome = F9860QueryEngine.HandleFetchResultCore(
+            JDEDB_PASSED,
+            () => F9860QueryEngine.FetchOutcome.Break,
+            () => false,
+            null,
+            null);
+
+        await Assert.That(outcome).IsEqualTo(F9860QueryEngine.FetchOutcome.Break);
+    }
+
+    private static void SetPrivateField<T>(object target, string fieldName, T value)
+    {
+        var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+        field!.SetValue(target, value);
+    }
+
+    private static T GetPrivateField<T>(object target, string fieldName)
+    {
+        var field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+        return (T)field!.GetValue(target)!;
+    }
+
+    private static void InvokePrivateVoid(object target, string methodName, params object?[] args)
+    {
+        _ = InvokePrivate(target, methodName, args);
+    }
+
+    private static object? InvokePrivate(object target, string methodName, params object?[] args)
+    {
+        var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+        return method!.Invoke(target, args);
     }
 }

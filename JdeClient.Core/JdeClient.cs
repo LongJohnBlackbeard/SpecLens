@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 using JdeClient.Core.Internal;
 using JdeClient.Core.Exceptions;
 using JdeClient.Core.Interop;
@@ -32,6 +34,7 @@ public partial class JdeClient : IDisposable
     private readonly IJdeTableQueryEngineFactory _tableQueryEngineFactory;
     private readonly IEventRulesQueryEngineFactory _eventRulesQueryEngineFactory;
     private readonly IDataSourceResolver _dataSourceResolver;
+    private readonly IOmwApi _omwApi;
     private bool _disposed;
 
     /// <summary>
@@ -46,6 +49,7 @@ public partial class JdeClient : IDisposable
         _tableQueryEngineFactory = new JdeTableQueryEngineFactory();
         _eventRulesQueryEngineFactory = new EventRulesQueryEngineFactory();
         _dataSourceResolver = new JdeDataSourceResolver();
+        _omwApi = new OmwApi();
     }
 
     /// <summary>
@@ -56,13 +60,15 @@ public partial class JdeClient : IDisposable
         JdeClientOptions? options = null,
         IJdeTableQueryEngineFactory? tableQueryEngineFactory = null,
         IEventRulesQueryEngineFactory? eventRulesQueryEngineFactory = null,
-        IDataSourceResolver? dataSourceResolver = null)
+        IDataSourceResolver? dataSourceResolver = null,
+        IOmwApi? omwApi = null)
     {
         _options = options ?? JdeClientOptions.FromLegacyDebug();
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _tableQueryEngineFactory = tableQueryEngineFactory ?? new JdeTableQueryEngineFactory();
         _eventRulesQueryEngineFactory = eventRulesQueryEngineFactory ?? new EventRulesQueryEngineFactory();
         _dataSourceResolver = dataSourceResolver ?? new JdeDataSourceResolver();
+        _omwApi = omwApi ?? new OmwApi();
     }
 
     #region Connection Management
@@ -169,12 +175,12 @@ public partial class JdeClient : IDisposable
         }, cancellationToken);
     }
 
-    private static string? NormalizeUser(string? user)
+    internal static string? NormalizeUser(string? user)
     {
         return string.IsNullOrWhiteSpace(user) ? null : user.Trim();
     }
 
-    private static List<JdeFilter> BuildProjectStatusFilters(string? status)
+    internal static List<JdeFilter> BuildProjectStatusFilters(string? status)
     {
         var filters = new List<JdeFilter>();
         if (!string.IsNullOrWhiteSpace(status))
@@ -226,7 +232,7 @@ public partial class JdeClient : IDisposable
         return MapProjects(result);
     }
 
-    private static List<JdeProjectInfo> FilterProjectsByUser(
+    internal static List<JdeProjectInfo> FilterProjectsByUser(
         List<JdeProjectInfo> projects,
         HashSet<string> projectsForUser)
     {
@@ -235,7 +241,7 @@ public partial class JdeClient : IDisposable
             .ToList();
     }
 
-    private static void AddWildcardFilter(List<JdeFilter> filters, string columnName, string? value)
+    internal static void AddWildcardFilter(List<JdeFilter> filters, string columnName, string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -257,7 +263,7 @@ public partial class JdeClient : IDisposable
         });
     }
 
-    private static void AddLikeFilter(List<JdeFilter> filters, string columnName, string? value)
+    internal static void AddLikeFilter(List<JdeFilter> filters, string columnName, string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -332,6 +338,442 @@ public partial class JdeClient : IDisposable
                 throw new JdeApiException("GetProjectObjectsAsync", "Failed to retrieve project objects from F98222", ex);
             }
         }, cancellationToken);
+    }
+
+    #endregion
+
+    #region OMW Export
+
+    /// <summary>
+    /// Export an OMW project to a .par repository using OMWCallSaveObjectToRepositoryEx.
+    /// </summary>
+    /// <param name="projectName">Project name (OMWPRJID).</param>
+    /// <param name="pathCode">Path code (e.g., "DV920").</param>
+    /// <param name="outputPath">
+    /// Optional full file path or directory for the generated .par.
+    /// When provided, this is passed via OMW external save zip location (parameter 7096).
+    /// </param>
+    /// <param name="insertOnly">True to insert only (do not overwrite existing repository entries).</param>
+    /// <param name="include64BitOption">
+    /// Include 64-bit files flag (valid values: 1, 2, 3; default: 2).
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<JdeOmwExportResult> ExportProjectToParAsync(
+        string projectName,
+        string pathCode,
+        string? outputPath = null,
+        bool insertOnly = false,
+        int include64BitOption = 2,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(projectName))
+        {
+            throw new ArgumentException("Project name is required.", nameof(projectName));
+        }
+
+        if (string.IsNullOrWhiteSpace(pathCode))
+        {
+            throw new ArgumentException("Path code is required.", nameof(pathCode));
+        }
+
+        if (include64BitOption is < 1 or > 3)
+        {
+            throw new ArgumentOutOfRangeException(nameof(include64BitOption), "Valid values are 1, 2, or 3.");
+        }
+
+        string trimmedProjectName = projectName.Trim();
+        string trimmedPathCode = pathCode.Trim();
+        string? resolvedOutputPath = ResolveOmwExportPath(outputPath, trimmedProjectName);
+        if (!string.IsNullOrWhiteSpace(resolvedOutputPath))
+        {
+            EnsureOutputDirectory(resolvedOutputPath);
+        }
+
+        _session.EnsureConnected();
+
+        return await _session.ExecuteAsync(() =>
+        {
+            try
+            {
+                return ExportOmwObjectToRepository(
+                    trimmedProjectName,
+                    "PRJ",
+                    trimmedPathCode,
+                    trimmedProjectName,
+                    resolvedOutputPath,
+                    insertOnly,
+                    include64BitOption);
+            }
+            catch (Exception ex) when (ex is not JdeException)
+            {
+                throw new JdeApiException("ExportProjectToParAsync", $"Failed to export OMW project {trimmedProjectName}", ex);
+            }
+        }, cancellationToken);
+    }
+
+    private JdeOmwExportResult ExportOmwObjectToRepository(
+        string objectId,
+        string objectType,
+        string pathCode,
+        string projectName,
+        string? outputPath,
+        bool insertOnly,
+        int include64BitOption)
+    {
+        bool outputPathProvided = !string.IsNullOrWhiteSpace(outputPath);
+        bool outputFileAlreadyExists = outputPathProvided && File.Exists(outputPath!);
+
+        if (outputPathProvided)
+        {
+            string? release = ResolveOmwRelease(projectName, pathCode);
+            var result = ExportOmwObjectToRepositoryViaSave(
+                objectId,
+                objectType,
+                pathCode,
+                projectName,
+                outputPath,
+                release,
+                outputFileAlreadyExists);
+            EnsureOmwExportFile(outputPath);
+            return result;
+        }
+
+        return ExportOmwObjectToRepositoryEx(
+            objectId,
+            objectType,
+            pathCode,
+            projectName,
+            outputPath,
+            insertOnly,
+            include64BitOption);
+    }
+
+    private JdeOmwExportResult ExportOmwObjectToRepositoryViaSave(
+        string objectId,
+        string objectType,
+        string pathCode,
+        string projectName,
+        string? outputPath,
+        string? release,
+        bool outputFileAlreadyExists)
+    {
+        IntPtr objectFactory = IntPtr.Zero;
+        IntPtr paramHandle = IntPtr.Zero;
+        IntPtr objectHandle = IntPtr.Zero;
+        var allocated = new List<IntPtr>();
+        try
+        {
+            var factoryResult = _omwApi.OMWCreateOMWObjectFactory(_session.EnvironmentHandle, out objectFactory);
+            EnsureOmwSuccess(factoryResult, "OMWCreateOMWObjectFactory", "Failed to create OMW object factory");
+
+            var paramResult = _omwApi.OMWCreateParamObject(out paramHandle);
+            EnsureOmwSuccess(paramResult, "OMWCreateParamObject", "Failed to create OMW parameter object");
+
+            SetOmwStringAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.ObjectType, objectType, allocated);
+            SetOmwStringAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.ObjectId, objectId, allocated);
+            SetOmwStringAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.ProjectId, projectName, allocated);
+            if (!string.IsNullOrWhiteSpace(release))
+            {
+                SetOmwStringAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.Release, release, allocated);
+            }
+            SetOmwStringAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.Location, pathCode, allocated);
+            SetOmwIntAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.AutoHUser, 0);
+
+            // Extra attributes observed in fat client OMW export logs; best-effort to mirror behavior.
+            SetOmwStringAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.OmwParam7034, "ObjectManagement", allocated, allowNotSupported: true);
+            SetOmwStringAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.OmwParam7035, " ", allocated, allowNotSupported: true);
+            SetOmwStringAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.OmwParam718, " ", allocated, allowNotSupported: true);
+            SetOmwStringAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.OmwParam727, "  ", allocated, allowNotSupported: true);
+            SetOmwIntAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.OmwParam740, 0, allowNotSupported: true);
+            SetOmwIntAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.OmwParam7003, 0, allowNotSupported: true);
+            SetOmwIntAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.OmwParam7004, 0, allowNotSupported: true);
+
+            if (!string.IsNullOrWhiteSpace(outputPath))
+            {
+                string saveLocation = Path.GetDirectoryName(outputPath) ?? outputPath;
+                SetOmwStringAttribute(_omwApi, ref paramHandle, JdeOmwAttribute.ExternalSaveZipLocation, saveLocation, allocated);
+            }
+
+            var getProjectResult = _omwApi.OMWCallMethod(
+                objectFactory,
+                JdeOmwMethod.GetProject,
+                ref paramHandle);
+            EnsureOmwSuccess(getProjectResult, "OMWCallMethod", "Failed to resolve OMW project");
+
+            var getHandleResult = _omwApi.OMWGetAttribute(
+                paramHandle,
+                JdeOmwAttribute.OmwParamObjectInterfacePointer,
+                out var objectAttr);
+            EnsureOmwPointer(getHandleResult, objectAttr.Pointer, "OMWGetAttribute", "Failed to resolve OMW object interface pointer");
+
+            objectHandle = objectAttr.Pointer;
+
+            var saveResult = _omwApi.OMWCallMethod(
+                objectHandle,
+                JdeOmwMethod.Save,
+                ref paramHandle);
+            EnsureOmwSuccess(saveResult, "OMWCallMethod", "OMW export failed");
+
+            return new JdeOmwExportResult
+            {
+                ObjectId = objectId,
+                ObjectType = objectType,
+                ProjectName = projectName,
+                OutputPath = outputPath,
+                FileAlreadyExists = outputFileAlreadyExists
+            };
+        }
+        finally
+        {
+            foreach (var ptr in allocated)
+            {
+                Marshal.FreeHGlobal(ptr);
+            }
+
+            if (paramHandle != IntPtr.Zero)
+            {
+                var handle = paramHandle;
+                _ = _omwApi.OMWDeleteObject(ref handle);
+            }
+
+            if (objectHandle != IntPtr.Zero)
+            {
+                var handle = objectHandle;
+                _ = _omwApi.OMWDeleteObject(ref handle);
+            }
+
+            if (objectFactory != IntPtr.Zero)
+            {
+                var handle = objectFactory;
+                _ = _omwApi.OMWDeleteObject(ref handle);
+            }
+        }
+    }
+
+    private JdeOmwExportResult ExportOmwObjectToRepositoryEx(
+        string objectId,
+        string objectType,
+        string pathCode,
+        string projectName,
+        string? outputPath,
+        bool insertOnly,
+        int include64BitOption)
+    {
+        IntPtr paramHandle = IntPtr.Zero;
+        IntPtr pathPtr = IntPtr.Zero;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(outputPath))
+            {
+                var createResult = _omwApi.OMWCreateParamObject(out paramHandle);
+                EnsureOmwSuccess(createResult, "OMWCreateParamObject", "Failed to create OMW parameter object");
+
+                pathPtr = Marshal.StringToHGlobalUni(outputPath);
+                var attr = new JdeOmwAttrUnion { StringPtr = pathPtr };
+                var setResult = _omwApi.OMWSetAttribute(
+                    ref paramHandle,
+                    JdeOmwAttribute.ExternalSaveZipLocation,
+                    attr,
+                    JdeOmwUnionValue.String);
+                EnsureOmwSuccess(setResult, "OMWSetAttribute", "Failed to set OMW external save zip location");
+
+                var setCaExtractPath = _omwApi.OMWSetAttribute(
+                    ref paramHandle,
+                    JdeOmwAttribute.OmwParam7031,
+                    attr,
+                    JdeOmwUnionValue.String);
+                EnsureOmwSuccessOrNotSupported(setCaExtractPath, "OMWSetAttribute", "Failed to set OMW export parameter 7031");
+            }
+
+            bool fileExists;
+            var result = _omwApi.OMWCallSaveObjectToRepositoryEx(
+                _session.UserHandle,
+                objectId,
+                objectType,
+                pathCode,
+                projectName,
+                insertOnly,
+                out fileExists,
+                include64BitOption);
+
+            EnsureOmwSuccess(result, "OMWCallSaveObjectToRepositoryEx", "OMW export failed");
+
+            return new JdeOmwExportResult
+            {
+                ObjectId = objectId,
+                ObjectType = objectType,
+                ProjectName = projectName,
+                OutputPath = outputPath,
+                FileAlreadyExists = fileExists
+            };
+        }
+        finally
+        {
+            if (pathPtr != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(pathPtr);
+            }
+
+            if (paramHandle != IntPtr.Zero)
+            {
+                var handle = paramHandle;
+                _ = _omwApi.OMWDeleteObject(ref handle);
+            }
+        }
+    }
+
+    internal static void SetOmwStringAttribute(
+        IOmwApi omwApi,
+        ref IntPtr paramHandle,
+        JdeOmwAttribute attribute,
+        string value,
+        List<IntPtr> allocated,
+        bool allowNotSupported = false)
+    {
+        IntPtr ptr = Marshal.StringToHGlobalUni(value);
+        allocated.Add(ptr);
+        var attr = new JdeOmwAttrUnion { StringPtr = ptr };
+        var setResult = omwApi.OMWSetAttribute(ref paramHandle, attribute, attr, JdeOmwUnionValue.String);
+        if (allowNotSupported && setResult != JdeOmwReturn.Success)
+        {
+            return;
+        }
+
+        EnsureOmwSuccess(setResult, "OMWSetAttribute", $"Failed to set OMW attribute {attribute}");
+    }
+
+    internal static void SetOmwIntAttribute(
+        IOmwApi omwApi,
+        ref IntPtr paramHandle,
+        JdeOmwAttribute attribute,
+        int value,
+        bool allowNotSupported = false)
+    {
+        var attr = new JdeOmwAttrUnion { IntValue = value };
+        var setResult = omwApi.OMWSetAttribute(ref paramHandle, attribute, attr, JdeOmwUnionValue.Int);
+        if (allowNotSupported && setResult != JdeOmwReturn.Success)
+        {
+            return;
+        }
+
+        EnsureOmwSuccess(setResult, "OMWSetAttribute", $"Failed to set OMW attribute {attribute}");
+    }
+
+    private static void EnsureOmwSuccess(JdeOmwReturn result, string apiFunction, string message)
+    {
+        if (result != JdeOmwReturn.Success)
+        {
+            throw new JdeApiException(apiFunction, message, (int)result);
+        }
+    }
+
+    private static void EnsureOmwSuccessOrNotSupported(JdeOmwReturn result, string apiFunction, string message)
+    {
+        if (result is JdeOmwReturn.Success or JdeOmwReturn.NotSupported)
+        {
+            return;
+        }
+
+        throw new JdeApiException(apiFunction, message, (int)result);
+    }
+
+    private static void EnsureOmwPointer(JdeOmwReturn result, IntPtr pointer, string apiFunction, string message)
+    {
+        if (result != JdeOmwReturn.Success || pointer == IntPtr.Zero)
+        {
+            throw new JdeApiException(apiFunction, message, (int)result);
+        }
+    }
+
+    private string? ResolveOmwRelease(string projectName, string pathCode)
+    {
+        using var queryEngine = _tableQueryEngineFactory.Create(_options);
+        var filters = new[]
+        {
+            new JdeFilter("EMPATHCD", pathCode, JdeFilterOperator.Equals)
+        };
+        var result = queryEngine.QueryTable("F00942", maxRows: 1, filters, dataSourceOverride: null);
+        var row = result.Rows.FirstOrDefault();
+        var release = row == null ? null : FindFirstValue(row, "EMRLS", "RELEASE");
+        if (!string.IsNullOrWhiteSpace(release))
+        {
+            return release.Trim();
+        }
+
+        var projectFilters = new List<JdeFilter>
+        {
+            new("OMWPRJID", projectName.Trim(), JdeFilterOperator.Equals)
+        };
+        if (!string.IsNullOrWhiteSpace(pathCode))
+        {
+            projectFilters.Add(new JdeFilter("PATHCD", pathCode.Trim(), JdeFilterOperator.Equals));
+        }
+
+        var projectResult = queryEngine.QueryTable("F98222", maxRows: 0, projectFilters, dataSourceOverride: null);
+        var projectObjects = MapProjectObjects(projectResult);
+        var projectRelease = projectObjects
+            .Select(obj => obj.SourceRelease)
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        if (!string.IsNullOrWhiteSpace(projectRelease))
+        {
+            if (_options.EnableDebug)
+            {
+                _options.WriteLog($"[DEBUG] OMW release resolved from F98222 SRCRLS: {projectRelease.Trim()}");
+            }
+            return projectRelease.Trim();
+        }
+
+        if (_options.EnableDebug)
+        {
+            _options.WriteLog($"[DEBUG] OMW release not found for project {projectName} / path code {pathCode}; proceeding without Release attribute.");
+        }
+
+        return null;
+    }
+
+    internal static void EnsureOmwExportFile(string? outputPath)
+    {
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            return;
+        }
+
+        if (!File.Exists(outputPath))
+        {
+            throw new JdeApiException(
+                "ExportProjectToParAsync",
+                $"OMW export reported success but no file was created at {outputPath}.");
+        }
+    }
+
+    internal static string? ResolveOmwExportPath(string? outputPath, string projectName)
+    {
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            return null;
+        }
+
+        string trimmed = outputPath.Trim();
+        if (!Path.HasExtension(trimmed))
+        {
+            trimmed = Path.Combine(trimmed, $"PRJ_{projectName}_60_99.par");
+        }
+        else if (!string.Equals(Path.GetExtension(trimmed), ".par", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Output path must be a .par file or directory.", nameof(outputPath));
+        }
+
+        return Path.GetFullPath(trimmed);
+    }
+
+
+    private static void EnsureOutputDirectory(string filePath)
+    {
+        string? directory = Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
     }
 
     #endregion
@@ -1098,7 +1540,7 @@ public partial class JdeClient : IDisposable
         return new JdeQueryResult { TableName = "F98611" };
     }
 
-    private static List<JdeDataSourceInfo> MapDataSources(JdeQueryResult result)
+    internal static List<JdeDataSourceInfo> MapDataSources(JdeQueryResult result)
     {
         var items = new List<JdeDataSourceInfo>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1134,7 +1576,7 @@ public partial class JdeClient : IDisposable
         return items;
     }
 
-    private static List<JdeProjectInfo> MapProjects(JdeQueryResult result)
+    internal static List<JdeProjectInfo> MapProjects(JdeQueryResult result)
     {
         var items = new List<JdeProjectInfo>();
 
@@ -1164,7 +1606,7 @@ public partial class JdeClient : IDisposable
     
     
 
-    private static List<JdeProjectObjectInfo> MapProjectObjects(JdeQueryResult result)
+    internal static List<JdeProjectObjectInfo> MapProjectObjects(JdeQueryResult result)
     {
         var items = new List<JdeProjectObjectInfo>();
 
@@ -1200,7 +1642,7 @@ public partial class JdeClient : IDisposable
         return items;
     }
 
-    private static string? FindFirstValue(Dictionary<string, object> row, params string[] candidates)
+    internal static string? FindFirstValue(Dictionary<string, object> row, params string[] candidates)
     {
         foreach (var candidate in candidates)
         {
@@ -1232,7 +1674,7 @@ public partial class JdeClient : IDisposable
         return null;
     }
 
-    private static void SplitObjectId(string objectId, out string objectName, out string? versionName)
+    internal static void SplitObjectId(string objectId, out string objectName, out string? versionName)
     {
         objectName = string.Empty;
         versionName = null;
@@ -1299,7 +1741,7 @@ public partial class JdeClient : IDisposable
     }
 
     
-    private static List<JdeUserDefinedCodeTypes> MapUserDefinedCodeTypes(JdeQueryResult result)
+    internal static List<JdeUserDefinedCodeTypes> MapUserDefinedCodeTypes(JdeQueryResult result)
     {
         var codes = new List<JdeUserDefinedCodeTypes>();
 
@@ -1364,7 +1806,7 @@ public partial class JdeClient : IDisposable
         return codes;
     }
 
-    private static List<JdeUserDefinedCodes> MapUserDefinedCodes(JdeQueryResult results)
+    internal static List<JdeUserDefinedCodes> MapUserDefinedCodes(JdeQueryResult results)
     {
         var codes = new List<JdeUserDefinedCodes>();
 

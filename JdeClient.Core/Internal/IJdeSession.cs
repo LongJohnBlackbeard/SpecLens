@@ -24,6 +24,11 @@ internal interface IJdeSession : IDisposable
     HUSER UserHandle { get; }
 
     /// <summary>
+    /// JDE environment handle for API calls.
+    /// </summary>
+    HENV EnvironmentHandle { get; }
+
+    /// <summary>
     /// Connect to JDE and initialize required handles.
     /// </summary>
     Task ConnectAsync(string? specPath = null, CancellationToken cancellationToken = default);
