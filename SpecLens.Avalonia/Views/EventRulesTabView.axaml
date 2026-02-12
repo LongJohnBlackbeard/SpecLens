@@ -55,7 +55,8 @@
                     Margin="12"
                     BorderBrush="{DynamicResource AppBorderStrongBrush}"
                     BorderThickness="1"
-                    CornerRadius="4">
+                    CornerRadius="4"
+                    IsVisible="{Binding IsEventRulesView}">
                 <AvaloniaEdit:TextEditor x:Name="EventRulesEditor"
                                          IsReadOnly="True"
                                          ShowLineNumbers="False"
@@ -65,6 +66,81 @@
                                          HorizontalScrollBarVisibility="Auto"
                                          VerticalScrollBarVisibility="Auto" />
             </Border>
+
+            <Grid x:Name="CodeEditorsGrid"
+                  Grid.Row="1"
+                  Margin="12"
+                  IsVisible="{Binding IsCodeView}"
+                  RowDefinitions="*,Auto,*">
+                <Expander x:Name="HeaderCodeExpander"
+                          Grid.Row="0"
+                          IsExpanded="True"
+                          Header="{Binding HeaderDocumentTitle}"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch"
+                          VerticalContentAlignment="Stretch"
+                          Expanded="OnCodeExpanderToggled"
+                          Collapsed="OnCodeExpanderToggled">
+                    <Border Margin="0,6,0,0"
+                            BorderBrush="{DynamicResource AppBorderStrongBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch">
+                        <AvaloniaEdit:TextEditor x:Name="HeaderCodeEditor"
+                                                 IsReadOnly="True"
+                                                 ShowLineNumbers="True"
+                                                 FontFamily="Consolas"
+                                                 FontSize="12"
+                                                 MinHeight="150"
+                                                 HorizontalAlignment="Stretch"
+                                                 VerticalAlignment="Stretch"
+                                                 Background="{DynamicResource AppWindowBackgroundBrush}"
+                                                 HorizontalScrollBarVisibility="Auto"
+                                                 VerticalScrollBarVisibility="Auto" />
+                    </Border>
+                </Expander>
+
+                <GridSplitter x:Name="CodeEditorsSplitter"
+                              Grid.Row="1"
+                              Height="6"
+                              Background="{DynamicResource AppSplitterBrush}"
+                              ResizeDirection="Rows"
+                              ResizeBehavior="PreviousAndNext"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch" />
+
+                <Expander x:Name="SourceCodeExpander"
+                          Grid.Row="2"
+                          IsExpanded="True"
+                          Header="{Binding SourceDocumentTitle}"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch"
+                          VerticalContentAlignment="Stretch"
+                          Expanded="OnCodeExpanderToggled"
+                          Collapsed="OnCodeExpanderToggled">
+                    <Border Margin="0,6,0,0"
+                            BorderBrush="{DynamicResource AppBorderStrongBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch">
+                        <AvaloniaEdit:TextEditor x:Name="SourceCodeEditor"
+                                                 IsReadOnly="True"
+                                                 ShowLineNumbers="True"
+                                                 FontFamily="Consolas"
+                                                 FontSize="12"
+                                                 MinHeight="220"
+                                                 HorizontalAlignment="Stretch"
+                                                 VerticalAlignment="Stretch"
+                                                 Background="{DynamicResource AppWindowBackgroundBrush}"
+                                                 HorizontalScrollBarVisibility="Auto"
+                                                 VerticalScrollBarVisibility="Auto" />
+                    </Border>
+                </Expander>
+            </Grid>
         </Grid>
     </Grid>
 </avalonia:ReactiveUserControl>

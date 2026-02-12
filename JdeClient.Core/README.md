@@ -182,7 +182,25 @@ var nerRoot = await client.GetEventRulesTreeAsync(ners[0]);
 
 // XML for a specific event spec key (EVSK)
 var xmlDocs = await client.GetEventRulesXmlAsync("EVS-...-...");
+var xmlDocsCentral = await client.GetEventRulesXmlAsync(
+    "EVS-...-...",
+    useCentralLocation: true,
+    dataSourceOverride: "Central Objects - PY920");
+
+// BUSFUNC payload and best-effort C source text (from F98762/JDEBLC specs)
+var cDocs = await client.GetBusinessFunctionCodeAsync("B5500725");
+var oneFunction = await client.GetBusinessFunctionCodeAsync("B5500725", "GetVersion");
+var py920Docs = await client.GetBusinessFunctionCodeAsync(
+    "B5500725",
+    functionName: null,
+    location: JdeBusinessFunctionCodeLocation.Central,
+    dataSourceOverride: "PY920");
 ```
+
+Notes:
+- `JdeBusinessFunctionCodeDocument` includes both `SourceCode` (`.c`) and `HeaderCode` (`.h`) when present in the payload.
+- Explicit `location` calls (`Local` or `Central`) are strict and do not fall back to other locations.
+- Use `GetAvailablePathCodesAsync()` to discover valid path codes from `F00942`.
 
 ### Project Pre-Promotion Export (Status 28)
 
@@ -251,6 +269,8 @@ Task<List<JdeObjectInfo>> GetObjectsAsync(
     string? searchPattern = null,
     string? descriptionPattern = null,
     int? maxResults = null,
+    string? dataSourceOverride = null,
+    bool allowDataSourceFallback = true,
     CancellationToken cancellationToken = default)
 ```
 
@@ -367,8 +387,36 @@ Task<IReadOnlyList<JdeEventRulesXmlDocument>> GetEventRulesXmlAsync(
     string eventSpecKey,
     CancellationToken cancellationToken = default)
 
+Task<IReadOnlyList<JdeEventRulesXmlDocument>> GetEventRulesXmlAsync(
+    string eventSpecKey,
+    bool useCentralLocation,
+    string? dataSourceOverride,
+    CancellationToken cancellationToken = default)
+
 Task<IReadOnlyList<JdeSpecXmlDocument>> GetDataStructureXmlAsync(
     string templateName,
+    CancellationToken cancellationToken = default)
+
+Task<IReadOnlyList<JdeSpecXmlDocument>> GetDataStructureXmlAsync(
+    string templateName,
+    bool useCentralLocation,
+    string? dataSourceOverride,
+    CancellationToken cancellationToken = default)
+
+Task<List<string>> GetAvailablePathCodesAsync(
+    string? dataSourceOverride = null,
+    CancellationToken cancellationToken = default)
+
+Task<IReadOnlyList<JdeBusinessFunctionCodeDocument>> GetBusinessFunctionCodeAsync(
+    string objectName,
+    string? functionName = null,
+    CancellationToken cancellationToken = default)
+
+Task<IReadOnlyList<JdeBusinessFunctionCodeDocument>> GetBusinessFunctionCodeAsync(
+    string objectName,
+    string? functionName,
+    JdeBusinessFunctionCodeLocation location,
+    string? dataSourceOverride = null,
     CancellationToken cancellationToken = default)
 ```
 

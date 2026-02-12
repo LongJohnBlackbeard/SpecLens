@@ -20,6 +20,16 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Restore
+        run: dotnet restore SpecLens.sln
+
+      - name: Run unit tests (hard gate)
+        run: >-
+          dotnet test JdeClient.Core.UnitTests/JdeClient.Core.UnitTests.csproj
+          -c Release
+          --nologo
+          --verbosity minimal
+
       - name: Publish (win-x64, self-contained)
         run: >-
           dotnet publish SpecLens.Avalonia/SpecLens.Avalonia.csproj
@@ -29,6 +39,17 @@ jobs:
           -p:SelfContained=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -o artifacts/SpecLens-win-x64
+
+      - name: Pack JdeClient.Core (NuGet)
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/JdeClient.Core | Out-Null
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          dotnet pack JdeClient.Core/JdeClient.Core.csproj `
+            -c Release `
+            -o artifacts/JdeClient.Core `
+            -p:PackageVersion=$version `
+            -p:IncludeSymbols=true `
+            -p:SymbolPackageFormat=snupkg
 
       - name: Build release notes from CHANGELOG
         run: |
@@ -67,9 +88,14 @@ jobs:
           Compress-Archive -Path artifacts/SpecLens-win-x64-symbols/*
           -DestinationPath artifacts/SpecLens-win-x64-symbols.zip
 
+      - name: Zip JdeClient.Core package
+        run: >-
+          Compress-Archive -Path artifacts/JdeClient.Core/*
+          -DestinationPath artifacts/JdeClient.Core-package.zip
+
       - name: Generate checksums
         run: >-
-          Get-FileHash artifacts/SpecLens-win-x64.zip,artifacts/SpecLens-win-x64-symbols.zip -Algorithm SHA256 |
+          Get-FileHash artifacts/SpecLens-win-x64.zip,artifacts/SpecLens-win-x64-symbols.zip,artifacts/JdeClient.Core-package.zip -Algorithm SHA256 |
           ForEach-Object { "{0}  {1}" -f $_.Hash, $_.Path } |
           Set-Content artifacts/SpecLens-win-x64.sha256
 
@@ -87,4 +113,5 @@ jobs:
           files: |
             artifacts/SpecLens-win-x64.zip
             artifacts/SpecLens-win-x64-symbols.zip
+            artifacts/JdeClient.Core-package.zip
             artifacts/SpecLens-win-x64.sha256

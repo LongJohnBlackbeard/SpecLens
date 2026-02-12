@@ -1,4 +1,5 @@
 using JdeClient.Core.Models;
+using static JdeClient.Core.Interop.JdeStructures;
 
 namespace JdeClient.Core.Internal;
 
@@ -48,7 +49,37 @@ internal interface IEventRulesQueryEngine
     IReadOnlyList<JdeEventRulesXmlDocument> GetEventRulesXmlDocuments(string eventSpecKey);
 
     /// <summary>
+    /// Retrieve event rules XML documents for a spec key at an explicit spec location.
+    /// </summary>
+    IReadOnlyList<JdeEventRulesXmlDocument> GetEventRulesXmlDocuments(
+        string eventSpecKey,
+        JdeSpecLocation location,
+        string? dataSourceOverride);
+
+    /// <summary>
     /// Retrieve data structure XML documents for a template.
     /// </summary>
     IReadOnlyList<JdeSpecXmlDocument> GetDataStructureXmlDocuments(string templateName);
+
+    /// <summary>
+    /// Retrieve data structure XML documents for a template at an explicit spec location.
+    /// </summary>
+    IReadOnlyList<JdeSpecXmlDocument> GetDataStructureXmlDocuments(
+        string templateName,
+        JdeSpecLocation location,
+        string? dataSourceOverride);
+
+    /// <summary>
+    /// Retrieve C business function source payload/documents from BUSFUNC specs.
+    /// </summary>
+    IReadOnlyList<JdeBusinessFunctionCodeDocument> GetBusinessFunctionCodeDocuments(string objectName, string? functionName);
+
+    /// <summary>
+    /// Retrieve C business function source payload/documents from BUSFUNC specs with explicit location selection.
+    /// </summary>
+    IReadOnlyList<JdeBusinessFunctionCodeDocument> GetBusinessFunctionCodeDocuments(
+        string objectName,
+        string? functionName,
+        JdeBusinessFunctionCodeLocation location,
+        string? dataSourceOverride);
 }

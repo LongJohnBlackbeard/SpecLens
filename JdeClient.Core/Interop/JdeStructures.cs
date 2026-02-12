@@ -111,6 +111,7 @@ public static class JdeStructures
     public enum JdeSpecFileType
     {
         Undefined = 0,
+        BusFunc = 1,
         Dstmpl = 9,
         GbrLink = 12,
         GbrSpec = 13
@@ -205,6 +206,19 @@ public static class JdeStructures
     public struct JdeSpecKeyDstmpl
     {
         public NID TemplateName;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 1)]
+    public struct JdeSpecKeyBusFuncByFunction
+    {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 33)]
+        public string FunctionName;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 1)]
+    public struct JdeSpecKeyBusFuncByObject
+    {
+        public NID ObjectName;
     }
     #endregion
 

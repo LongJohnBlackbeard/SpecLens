@@ -24,6 +24,7 @@ public sealed class AppSettings
     public string SearchText { get; set; } = string.Empty;
     public string DescriptionSearchText { get; set; } = string.Empty;
     public JdeObjectType ObjectTypeFilter { get; set; } = JdeObjectType.Table;
+    public string ObjectSearchPathCode { get; set; } = string.Empty;
     public ColumnHeaderDisplayMode ColumnHeaderDisplayMode { get; set; } = ColumnHeaderDisplayMode.DataDictionary;
     public bool ShowTablePrefixInHeader { get; set; } = true;
     public double QueryColumnWidth { get; set; } = 160;
@@ -36,6 +37,7 @@ public sealed class AppSettings
     public string EventRulesDefaultTextColor { get; set; } = EventRulesSyntaxTheme.DefaultTextColor;
     public string EventRulesEditorBackgroundColor { get; set; } = EventRulesSyntaxTheme.DefaultEditorBackgroundColor;
     public string EventRulesStringColor { get; set; } = EventRulesSyntaxTheme.DefaultStringColor;
+    public bool EnableCCodeSyntaxHighlighting { get; set; } = true;
 }
 
 public interface IAppSettingsService

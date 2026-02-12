@@ -334,6 +334,27 @@ public class JdeClientStaticHelpersTests
     }
 
     [Test]
+    public async Task MapPathCodes_DedupesTrimsAndSorts()
+    {
+        var result = new JdeQueryResult
+        {
+            Rows = new List<Dictionary<string, object>>
+            {
+                new() { ["EMPATHCD"] = " PY920 " },
+                new() { ["PATHCD"] = "DV920" },
+                new() { ["PATHCODE"] = "py920" },
+                new() { ["PATHCD"] = "" }
+            }
+        };
+
+        var pathCodes = JdeClient.MapPathCodes(result);
+
+        await Assert.That(pathCodes.Count).IsEqualTo(2);
+        await Assert.That(pathCodes[0]).IsEqualTo("DV920");
+        await Assert.That(pathCodes[1]).IsEqualTo("PY920");
+    }
+
+    [Test]
     public async Task FilterProjectsByUser_FiltersToUserSet()
     {
         var projects = new List<JdeProjectInfo>

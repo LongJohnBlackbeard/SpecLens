@@ -60,6 +60,8 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
 
     private readonly IJdeConnectionService _connectionService;
     private readonly IDataDictionaryInfoService _dataDictionaryInfoService;
+    private readonly string? _objectLibrarianDataSourceOverride;
+    private readonly bool _allowObjectLibrarianFallback;
     private readonly bool _isBusinessView;
     private readonly ObservableCollection<SpecColumnDisplay> _columns = new();
     private readonly ObservableCollection<SpecIndexDisplay> _indexes = new();
@@ -92,12 +94,18 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
     public SpecsTabViewModel(
         JdeObjectInfo jdeObject,
         IJdeConnectionService connectionService,
-        IDataDictionaryInfoService dataDictionaryInfoService)
-        : base($"Specs: {jdeObject.ObjectName}", $"specs_{jdeObject.ObjectName}_{Guid.NewGuid():N}")
+        IDataDictionaryInfoService dataDictionaryInfoService,
+        string? objectLibrarianDataSourceOverride = null,
+        string? locationLabel = null)
+        : base(
+            $"Specs: {jdeObject.ObjectName}",
+            $"specs_{jdeObject.ObjectName}_{(string.IsNullOrWhiteSpace(locationLabel) ? "local" : locationLabel)}_{Guid.NewGuid():N}")
     {
         TableName = jdeObject.ObjectName;
         _connectionService = connectionService;
         _dataDictionaryInfoService = dataDictionaryInfoService;
+        _objectLibrarianDataSourceOverride = objectLibrarianDataSourceOverride;
+        _allowObjectLibrarianFallback = string.IsNullOrWhiteSpace(objectLibrarianDataSourceOverride);
         _isBusinessView = string.Equals(jdeObject.ObjectType?.Trim(), "BSVW", StringComparison.OrdinalIgnoreCase);
         Columns = new ReadOnlyObservableCollection<SpecColumnDisplay>(_columns);
         Indexes = new ReadOnlyObservableCollection<SpecIndexDisplay>(_indexes);
@@ -243,8 +251,16 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
     {
         var metadata = await _connectionService.RunExclusiveAsync(async client =>
         {
-            var tableInfo = await client.GetTableInfoAsync(TableName, cancellationToken);
-            var indexes = await client.GetTableIndexesAsync(TableName, cancellationToken);
+            var tableInfo = await client.GetTableInfoAsync(
+                TableName,
+                _objectLibrarianDataSourceOverride,
+                _allowObjectLibrarianFallback,
+                cancellationToken);
+            var indexes = await client.GetTableIndexesAsync(
+                TableName,
+                _objectLibrarianDataSourceOverride,
+                _allowObjectLibrarianFallback,
+                cancellationToken);
             return (tableInfo, indexes);
         }, cancellationToken);
 
@@ -365,7 +381,11 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
     private async Task LoadBusinessViewSpecsAsync(CancellationToken cancellationToken)
     {
         var viewInfo = await _connectionService.RunExclusiveAsync(
-            client => client.GetBusinessViewInfoAsync(TableName, cancellationToken),
+            client => client.GetBusinessViewInfoAsync(
+                TableName,
+                _objectLibrarianDataSourceOverride,
+                _allowObjectLibrarianFallback,
+                cancellationToken),
             cancellationToken);
 
         _columns.Clear();

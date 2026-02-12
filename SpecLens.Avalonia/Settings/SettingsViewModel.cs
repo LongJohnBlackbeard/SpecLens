@@ -32,6 +32,7 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
     private Color _eventRulesEqualsColor;
     private Color _eventRulesDefaultTextColor;
     private Color _eventRulesEditorBackgroundColor;
+    private bool _enableCCodeSyntaxHighlighting;
 
     public SettingsViewModel(IAppSettingsService settingsService)
     {
@@ -71,6 +72,7 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
         EventRulesEditorBackgroundColor = EventRulesSyntaxTheme.ParseColor(
             settingsService.Current.EventRulesEditorBackgroundColor,
             EventRulesSyntaxTheme.DefaultEditorBackgroundColor);
+        EnableCCodeSyntaxHighlighting = settingsService.Current.EnableCCodeSyntaxHighlighting;
 
         SetHeaderDisplayModeCommand = ReactiveCommand.Create<ColumnHeaderDisplayMode>(SetHeaderDisplayMode);
         SaveCommand = ReactiveCommand.Create(SaveSettings);
@@ -207,6 +209,12 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
     {
         get => _eventRulesEditorBackgroundColor;
         set => this.RaiseAndSetIfChanged(ref _eventRulesEditorBackgroundColor, value);
+    }
+
+    public bool EnableCCodeSyntaxHighlighting
+    {
+        get => _enableCCodeSyntaxHighlighting;
+        set => this.RaiseAndSetIfChanged(ref _enableCCodeSyntaxHighlighting, value);
     }
 
     public ReactiveCommand<ColumnHeaderDisplayMode, Unit> SetHeaderDisplayModeCommand { get; }
@@ -348,6 +356,12 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
         {
             EventRulesEditorBackgroundColor = editorBackgroundColor;
         }
+
+        bool enableCCodeSyntaxHighlighting = _settingsService.Current.EnableCCodeSyntaxHighlighting;
+        if (EnableCCodeSyntaxHighlighting != enableCCodeSyntaxHighlighting)
+        {
+            EnableCCodeSyntaxHighlighting = enableCCodeSyntaxHighlighting;
+        }
     }
 
     private void SaveSettings()
@@ -395,6 +409,7 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
             settings.EventRulesEqualsColor = EventRulesSyntaxTheme.ToHex(EventRulesEqualsColor);
             settings.EventRulesDefaultTextColor = EventRulesSyntaxTheme.ToHex(EventRulesDefaultTextColor);
             settings.EventRulesEditorBackgroundColor = EventRulesSyntaxTheme.ToHex(EventRulesEditorBackgroundColor);
+            settings.EnableCCodeSyntaxHighlighting = EnableCCodeSyntaxHighlighting;
         });
     }
 }

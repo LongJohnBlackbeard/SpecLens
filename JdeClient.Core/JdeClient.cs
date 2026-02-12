@@ -7,6 +7,7 @@ using JdeClient.Core.Internal;
 using JdeClient.Core.Exceptions;
 using JdeClient.Core.Interop;
 using JdeClient.Core.Models;
+using static JdeClient.Core.Interop.JdeStructures;
 
 namespace JdeClient.Core;
 
@@ -111,6 +112,8 @@ public partial class JdeClient : IDisposable
         string? searchPattern = null,
         string? descriptionPattern = null,
         int? maxResults = null,
+        string? dataSourceOverride = null,
+        bool allowDataSourceFallback = true,
         CancellationToken cancellationToken = default)
     {
         _session.EnsureConnected();
@@ -120,7 +123,13 @@ public partial class JdeClient : IDisposable
             try
             {
                 // Use F9860 query engine to get object catalog
-                var result = _session.QueryEngine.QueryObjects(objectType, searchPattern, descriptionPattern, maxResults ?? 0);
+                var result = _session.QueryEngine.QueryObjects(
+                    objectType,
+                    searchPattern,
+                    descriptionPattern,
+                    maxResults ?? 0,
+                    dataSourceOverride,
+                    allowDataSourceFallback);
                 return result;
             }
             catch (Exception ex) when (ex is not JdeException)
@@ -788,6 +797,27 @@ public partial class JdeClient : IDisposable
     /// <returns>Table metadata or null if not found</returns>
     public async Task<JdeTableInfo?> GetTableInfoAsync(string tableName, CancellationToken cancellationToken = default)
     {
+        return await GetTableInfoAsync(
+            tableName,
+            objectLibrarianDataSourceOverride: null,
+            allowObjectLibrarianFallback: true,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Get table metadata including column information.
+    /// </summary>
+    /// <param name="tableName">Table name (e.g., "F0101")</param>
+    /// <param name="objectLibrarianDataSourceOverride">Optional Object Librarian data source override (e.g., "Object Librarian - PY920")</param>
+    /// <param name="allowObjectLibrarianFallback">Allow Object Librarian fallback when override is unavailable.</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Table metadata or null if not found</returns>
+    public async Task<JdeTableInfo?> GetTableInfoAsync(
+        string tableName,
+        string? objectLibrarianDataSourceOverride,
+        bool allowObjectLibrarianFallback = true,
+        CancellationToken cancellationToken = default)
+    {
         _session.EnsureConnected();
 
         return await _session.ExecuteAsync(() =>
@@ -801,7 +831,11 @@ public partial class JdeClient : IDisposable
                     return null;
                 }
 
-                var objectInfo = _session.QueryEngine.GetObjectByName(tableName, JdeObjectType.Table);
+                var objectInfo = _session.QueryEngine.GetObjectByName(
+                    tableName,
+                    JdeObjectType.Table,
+                    objectLibrarianDataSourceOverride,
+                    allowObjectLibrarianFallback);
                 if (objectInfo != null)
                 {
                     tableInfo.Description = objectInfo.Description;
@@ -829,6 +863,27 @@ public partial class JdeClient : IDisposable
     /// <returns>Business view metadata or null if not found</returns>
     public async Task<JdeBusinessViewInfo?> GetBusinessViewInfoAsync(string viewName, CancellationToken cancellationToken = default)
     {
+        return await GetBusinessViewInfoAsync(
+            viewName,
+            objectLibrarianDataSourceOverride: null,
+            allowObjectLibrarianFallback: true,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Get business view metadata including columns, tables, and joins.
+    /// </summary>
+    /// <param name="viewName">Business view name (e.g., "V0101A")</param>
+    /// <param name="objectLibrarianDataSourceOverride">Optional Object Librarian data source override (e.g., "Object Librarian - PY920")</param>
+    /// <param name="allowObjectLibrarianFallback">Allow Object Librarian fallback when override is unavailable.</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Business view metadata or null if not found</returns>
+    public async Task<JdeBusinessViewInfo?> GetBusinessViewInfoAsync(
+        string viewName,
+        string? objectLibrarianDataSourceOverride,
+        bool allowObjectLibrarianFallback = true,
+        CancellationToken cancellationToken = default)
+    {
         _session.EnsureConnected();
 
         return await _session.ExecuteAsync(() =>
@@ -836,7 +891,24 @@ public partial class JdeClient : IDisposable
             try
             {
                 using var queryEngine = _tableQueryEngineFactory.Create(_options);
-                return queryEngine.GetBusinessViewInfo(viewName);
+                var viewInfo = queryEngine.GetBusinessViewInfo(viewName);
+                if (viewInfo == null)
+                {
+                    return null;
+                }
+
+                var objectInfo = _session.QueryEngine.GetObjectByName(
+                    viewName,
+                    JdeObjectType.BusinessView,
+                    objectLibrarianDataSourceOverride,
+                    allowObjectLibrarianFallback);
+                if (objectInfo != null)
+                {
+                    viewInfo.Description = objectInfo.Description;
+                    viewInfo.SystemCode = objectInfo.SystemCode;
+                }
+
+                return viewInfo;
             }
             catch (Exception ex) when (ex is not JdeException)
             {
@@ -1186,6 +1258,27 @@ public partial class JdeClient : IDisposable
         string tableName,
         CancellationToken cancellationToken = default)
     {
+        return await GetTableIndexesAsync(
+            tableName,
+            objectLibrarianDataSourceOverride: null,
+            allowObjectLibrarianFallback: true,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Retrieve table index metadata from table specs.
+    /// </summary>
+    /// <param name="tableName">Table name (e.g., "F0101")</param>
+    /// <param name="objectLibrarianDataSourceOverride">Optional Object Librarian data source override (e.g., "Object Librarian - PY920")</param>
+    /// <param name="allowObjectLibrarianFallback">Allow Object Librarian fallback when override is unavailable.</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Index definitions</returns>
+    public async Task<List<JdeIndexInfo>> GetTableIndexesAsync(
+        string tableName,
+        string? objectLibrarianDataSourceOverride,
+        bool allowObjectLibrarianFallback = true,
+        CancellationToken cancellationToken = default)
+    {
         _session.EnsureConnected();
 
         return await _session.ExecuteAsync(() =>
@@ -1446,6 +1539,133 @@ public partial class JdeClient : IDisposable
     }
 
     /// <summary>
+    /// Retrieve raw XML documents for a data structure template (DSTMPL) at an explicit location.
+    /// </summary>
+    public async Task<IReadOnlyList<JdeSpecXmlDocument>> GetDataStructureXmlAsync(
+        string templateName,
+        bool useCentralLocation,
+        string? dataSourceOverride,
+        CancellationToken cancellationToken = default)
+    {
+        _session.EnsureConnected();
+
+        return await _session.ExecuteAsync(() =>
+        {
+            try
+            {
+                var engine = _eventRulesQueryEngineFactory.Create(_session.UserHandle, _options);
+                var location = useCentralLocation
+                    ? JdeSpecLocation.CentralObjects
+                    : JdeSpecLocation.LocalUser;
+                var resolvedOverride = useCentralLocation ? dataSourceOverride : null;
+                return engine.GetDataStructureXmlDocuments(templateName, location, resolvedOverride);
+            }
+            catch (Exception ex) when (ex is not JdeException)
+            {
+                throw new JdeApiException("GetDataStructureXmlAsync", "Failed to load data structure XML", ex);
+            }
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Retrieve raw XML documents for a specific event spec key (EVSK) at an explicit location.
+    /// </summary>
+    public async Task<IReadOnlyList<JdeEventRulesXmlDocument>> GetEventRulesXmlAsync(
+        string eventSpecKey,
+        bool useCentralLocation,
+        string? dataSourceOverride,
+        CancellationToken cancellationToken = default)
+    {
+        _session.EnsureConnected();
+
+        return await _session.ExecuteAsync(() =>
+        {
+            try
+            {
+                var engine = _eventRulesQueryEngineFactory.Create(_session.UserHandle, _options);
+                var location = useCentralLocation
+                    ? JdeSpecLocation.CentralObjects
+                    : JdeSpecLocation.LocalUser;
+                var resolvedOverride = useCentralLocation ? dataSourceOverride : null;
+                return engine.GetEventRulesXmlDocuments(eventSpecKey, location, resolvedOverride);
+            }
+            catch (Exception ex) when (ex is not JdeException)
+            {
+                throw new JdeApiException("GetEventRulesXmlAsync", "Failed to load event rules XML", ex);
+            }
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Retrieve C business function payload/documents from BUSFUNC specs.
+    /// </summary>
+    /// <param name="objectName">Business function object name (e.g., B5500725)</param>
+    /// <param name="functionName">Optional function filter (FNNM)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public async Task<IReadOnlyList<JdeBusinessFunctionCodeDocument>> GetBusinessFunctionCodeAsync(
+        string objectName,
+        string? functionName = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await GetBusinessFunctionCodeAsync(
+            objectName,
+            functionName,
+            JdeBusinessFunctionCodeLocation.Auto,
+            dataSourceOverride: null,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Retrieve C business function payload/documents from BUSFUNC specs.
+    /// </summary>
+    /// <param name="objectName">Business function object name (e.g., B5500725)</param>
+    /// <param name="functionName">Optional function filter (FNNM)</param>
+    /// <param name="location">Spec location selection (Auto/Local/Central)</param>
+    /// <param name="dataSourceOverride">Optional central objects data source or path code override (e.g., "PY920" or "Central Objects - PY920")</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public async Task<IReadOnlyList<JdeBusinessFunctionCodeDocument>> GetBusinessFunctionCodeAsync(
+        string objectName,
+        string? functionName,
+        JdeBusinessFunctionCodeLocation location,
+        string? dataSourceOverride = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(objectName))
+        {
+            throw new ArgumentException("Object name is required.", nameof(objectName));
+        }
+
+        _session.EnsureConnected();
+
+        return await _session.ExecuteAsync(() =>
+        {
+            try
+            {
+                var engine = _eventRulesQueryEngineFactory.Create(_session.UserHandle, _options);
+                var documents = engine.GetBusinessFunctionCodeDocuments(objectName, functionName, location, dataSourceOverride);
+                if (location != JdeBusinessFunctionCodeLocation.Auto && documents.Count == 0)
+                {
+                    string locationLabel = location == JdeBusinessFunctionCodeLocation.Central
+                        ? "Central"
+                        : "Local";
+                    string sourceLabel = string.IsNullOrWhiteSpace(dataSourceOverride)
+                        ? locationLabel
+                        : $"{locationLabel} ({dataSourceOverride})";
+                    throw new JdeApiException(
+                        "GetBusinessFunctionCodeAsync",
+                        $"No business function code found for '{objectName}' in '{sourceLabel}'. Explicit location requests do not fall back.");
+                }
+
+                return documents;
+            }
+            catch (Exception ex) when (ex is not JdeException)
+            {
+                throw new JdeApiException("GetBusinessFunctionCodeAsync", "Failed to load business function code", ex);
+            }
+        }, cancellationToken);
+    }
+
+    /// <summary>
     /// Resolve the default data source for a table.
     /// </summary>
     /// <param name="tableName">Table name (e.g., "F0101")</param>
@@ -1465,6 +1685,33 @@ public partial class JdeClient : IDisposable
             catch (Exception ex) when (ex is not JdeException)
             {
                 throw new JdeApiException("GetDefaultTableDataSourceAsync", $"Failed to resolve data source for {tableName}", ex);
+            }
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Retrieve available path codes from F00942.
+    /// </summary>
+    /// <param name="dataSourceOverride">Optional data source override for F00942.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Distinct path code list.</returns>
+    public async Task<List<string>> GetAvailablePathCodesAsync(
+        string? dataSourceOverride = null,
+        CancellationToken cancellationToken = default)
+    {
+        _session.EnsureConnected();
+
+        return await _session.ExecuteAsync(() =>
+        {
+            try
+            {
+                using var queryEngine = _tableQueryEngineFactory.Create(_options);
+                var result = queryEngine.QueryTable("F00942", maxRows: 0, Array.Empty<JdeFilter>(), dataSourceOverride);
+                return MapPathCodes(result);
+            }
+            catch (Exception ex) when (ex is not JdeException)
+            {
+                throw new JdeApiException("GetAvailablePathCodesAsync", "Failed to retrieve path codes from F00942", ex);
             }
         }, cancellationToken);
     }
@@ -1573,6 +1820,32 @@ public partial class JdeClient : IDisposable
         }
 
         items.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+        return items;
+    }
+
+    internal static List<string> MapPathCodes(JdeQueryResult result)
+    {
+        var items = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in result.Rows)
+        {
+            string? pathCode = FindFirstValue(row, "EMPATHCD", "PATHCD", "PATHCODE");
+            if (string.IsNullOrWhiteSpace(pathCode))
+            {
+                continue;
+            }
+
+            string normalized = pathCode.Trim();
+            if (!seen.Add(normalized))
+            {
+                continue;
+            }
+
+            items.Add(normalized);
+        }
+
+        items.Sort(StringComparer.OrdinalIgnoreCase);
         return items;
     }
 

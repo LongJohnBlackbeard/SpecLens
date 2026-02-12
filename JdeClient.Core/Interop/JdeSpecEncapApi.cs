@@ -55,6 +55,15 @@ public static class JdeSpecEncapApi
         JdeStructures.ID idIndex,
         [MarshalAs(UnmanagedType.LPWStr)] string pathCode);
 
+    [DllImport(DllName, CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Unicode)]
+    public static extern int jdeSpecOpenIndexed(
+        out IntPtr hSpec,
+        JdeStructures.HUSER hUser,
+        JdeStructures.JdeSpecFileType eType,
+        JdeStructures.JdeSpecLocation eLoc,
+        JdeStructures.ID idIndex,
+        [MarshalAs(UnmanagedType.LPWStr)] string pathCode);
+
     [DllImport(DllName, CallingConvention = CallingConvention.StdCall)]
     public static extern int jdeSpecOpenLocal(
         out IntPtr hSpec,

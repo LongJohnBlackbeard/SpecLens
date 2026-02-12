@@ -234,12 +234,14 @@ internal class F9860QueryEngine : IF9860QueryEngine
         JdeObjectType? objectType = null,
         string? namePattern = null,
         string? descriptionPattern = null,
-        int maxResults = 0)
+        int maxResults = 0,
+        string? dataSourceOverride = null,
+        bool allowDataSourceFallback = true)
     {
         if (!_isInitialized)
             throw new InvalidOperationException("F9860QueryEngine not initialized. Call Initialize() first.");
 
-        HREQUEST hRequest = OpenF9860Table();
+        HREQUEST hRequest = OpenF9860Table(dataSourceOverride, allowDataSourceFallback);
         try
         {
             if (ShouldApplyFilter(objectType, namePattern, descriptionPattern))
@@ -262,14 +264,24 @@ internal class F9860QueryEngine : IF9860QueryEngine
     /// <summary>
     /// Retrieve a single object from F9860 by name and type.
     /// </summary>
-    public JdeObjectInfo? GetObjectByName(string objectName, JdeObjectType objectType)
+    public JdeObjectInfo? GetObjectByName(
+        string objectName,
+        JdeObjectType objectType,
+        string? dataSourceOverride = null,
+        bool allowDataSourceFallback = true)
     {
         if (string.IsNullOrWhiteSpace(objectName))
         {
             return null;
         }
 
-        var matches = QueryObjects(objectType, objectName, null, 5);
+        var matches = QueryObjects(
+            objectType,
+            objectName,
+            null,
+            5,
+            dataSourceOverride,
+            allowDataSourceFallback);
         if (matches.Count == 0)
         {
             return null;
@@ -638,12 +650,15 @@ internal class F9860QueryEngine : IF9860QueryEngine
         return maxResults > 0 && recordCount >= maxResults;
     }
 
-    private HREQUEST OpenF9860Table()
+    private HREQUEST OpenF9860Table(string? dataSourceOverride = null, bool allowDataSourceFallback = true)
     {
         DebugLog("[DEBUG] Opening F9860 table...");
 
-        string? dataSourceOverride = DataSourceResolver.ResolveTableDataSource(_hUser, "F9860");
-        DebugLog($"[DEBUG] Using data source override: {dataSourceOverride ?? "<default>"}");
+        string? requestedDataSource = string.IsNullOrWhiteSpace(dataSourceOverride)
+            ? DataSourceResolver.ResolveTableDataSource(_hUser, "F9860")
+            : dataSourceOverride;
+        string? resolvedDataSource = ResolveSystemObjectLibrarianDataSource(requestedDataSource);
+        DebugLog($"[DEBUG] Requested data source: {requestedDataSource ?? "<default>"}, effective: {resolvedDataSource ?? "<default>"}");
 
         NID tableNid = new NID("F9860");
         int result = JDB_OpenTable(
@@ -652,8 +667,28 @@ internal class F9860QueryEngine : IF9860QueryEngine
             new ID(0),
             IntPtr.Zero,
             0,
-            dataSourceOverride,
+            resolvedDataSource,
             out HREQUEST hRequest);
+
+        bool forceSystemTableFallback = ShouldForceSystemTableFallback(requestedDataSource);
+        if ((result != JDEDB_PASSED || !hRequest.IsValid) &&
+            (allowDataSourceFallback || forceSystemTableFallback) &&
+            !string.IsNullOrWhiteSpace(resolvedDataSource))
+        {
+            if (forceSystemTableFallback && !allowDataSourceFallback)
+            {
+                DebugLog("[DEBUG] F9860 open failed with pathcode-specific Object Librarian data source; retrying with default Object Librarian.");
+            }
+
+            result = JDB_OpenTable(
+                _hUser,
+                tableNid,
+                new ID(0),
+                IntPtr.Zero,
+                0,
+                null,
+                out hRequest);
+        }
 
         DebugLog($"[DEBUG] JDB_OpenTable result: {result}, handle: 0x{hRequest.Handle:X}");
 
@@ -663,6 +698,33 @@ internal class F9860QueryEngine : IF9860QueryEngine
         }
 
         return hRequest;
+    }
+
+    private string? ResolveSystemObjectLibrarianDataSource(string? dataSourceOverride)
+    {
+        if (!ShouldForceSystemTableFallback(dataSourceOverride))
+        {
+            return dataSourceOverride;
+        }
+
+        string? resolvedSystemDataSource = DataSourceResolver.ResolveTableDataSource(_hUser, "F9860");
+        if (!string.IsNullOrWhiteSpace(resolvedSystemDataSource))
+        {
+            DebugLog($"[DEBUG] F9860 requested with pathcode Object Librarian ({dataSourceOverride}); using system Object Librarian ({resolvedSystemDataSource}).");
+            return resolvedSystemDataSource;
+        }
+
+        return dataSourceOverride;
+    }
+
+    internal static bool ShouldForceSystemTableFallback(string? dataSourceOverride)
+    {
+        if (string.IsNullOrWhiteSpace(dataSourceOverride))
+        {
+            return false;
+        }
+
+        return dataSourceOverride.StartsWith("Object Librarian - ", StringComparison.OrdinalIgnoreCase);
     }
 
     private void SelectKeyed(HREQUEST hRequest)

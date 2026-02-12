@@ -14,19 +14,43 @@ distributed through releases today; in the future, it could be installed and upd
 **Disclaimer:** This project is in early development and bugs and missing features are expected. Any bugs, enhancments, missing features 
 can be reported through the Issues tab.
 
+## Release tags and installation
+- Releases are created from Git tags in the format `v*` (example: `v0.1.0` or `v0.1.0-prototype.1`).
+- The tag value (without `v`) is used as the release version for both app and library artifacts.
+- Tags containing `-` are published as prereleases.
+
+### SpecLens desktop app (win-x64)
+1. Open the [Releases](https://github.com/LongJohnBlackbeard/SpecLens/releases) page and pick a tag.
+2. Download `SpecLens-win-x64.zip`.
+3. Optionally verify integrity with `SpecLens-win-x64.sha256`.
+4. Extract the zip and run `Spec Lens.exe`.
+
+### JdeClient.Core library package
+1. Open the same release tag and download `JdeClient.Core-package.zip`.
+2. Extract it. The zip contains:
+- `JdeClient.Core.<version>.nupkg`
+- `JdeClient.Core.<version>.snupkg`
+3. Add the extracted folder as a package source and install:
+
+```bash
+dotnet nuget add source "C:\path\to\extracted\JdeClient.Core" --name SpecLensLocal
+dotnet add package JdeClient.Core --version <version> --source "C:\path\to\extracted\JdeClient.Core"
+```
+
 ## Features
 - Object catalog search (F9860)
 - Table and View Spec and Data browsing
-- Business function (NER only for now) event rules browsing
+- Business function event rules browsing (NER and C business function source/header)
+- Object/spec location selection (Local or path code/Object Librarian override)
 - Custom viewport grid components (prioritizing speed over UI)
 - Grid Sorting, Sequencing, and Column Freezing
 - Dark/Light theme support
 - Custom Syntax Highlighting for ER
+- Optional C source syntax highlighting toggle
 - OMW solution/project export to `.par` (`JdeClient.Core`)
 
 ## Future Features
-- All Object Event Rules Browsing
-- Specifying Object/Spec Location (Local, DV920, PY920, etc)
+- Deeper cross-object event-rules navigation
 - Run Business Functions
 - ER Search
 - DD Search

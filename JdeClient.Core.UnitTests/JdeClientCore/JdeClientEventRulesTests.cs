@@ -145,6 +145,74 @@ public class JdeClientEventRulesTests
     }
 
     [Test]
+    public async Task GetEventRulesXmlAsync_WithCentralLocation_DelegatesToExplicitLocationOverload()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        session.UserHandle.Returns(new HUSER { Handle = new IntPtr(8) });
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeEventRulesXmlDocument>>(session);
+
+        var engine = Substitute.For<IEventRulesQueryEngine>();
+        var expected = new List<JdeEventRulesXmlDocument>
+        {
+            new() { EventSpecKey = "EVSK-C", Xml = "<xml/>" }
+        };
+        engine.GetEventRulesXmlDocuments(
+                "EVSK-C",
+                JdeSpecLocation.CentralObjects,
+                "Central Objects - PY920")
+            .Returns(expected);
+
+        var factory = Substitute.For<IEventRulesQueryEngineFactory>();
+        factory.Create(Arg.Any<HUSER>(), Arg.Any<JdeClientOptions>()).Returns(engine);
+
+        var client = new JdeClient(session, new JdeClientOptions(), eventRulesQueryEngineFactory: factory);
+
+        // Act
+        var result = await client.GetEventRulesXmlAsync(
+            "EVSK-C",
+            useCentralLocation: true,
+            dataSourceOverride: "Central Objects - PY920");
+
+        // Assert
+        await Assert.That(result.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task GetEventRulesXmlAsync_WithLocalLocation_IgnoresDataSourceOverride()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        session.UserHandle.Returns(new HUSER { Handle = new IntPtr(9) });
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeEventRulesXmlDocument>>(session);
+
+        var engine = Substitute.For<IEventRulesQueryEngine>();
+        var expected = new List<JdeEventRulesXmlDocument>
+        {
+            new() { EventSpecKey = "EVSK-L", Xml = "<xml/>" }
+        };
+        engine.GetEventRulesXmlDocuments(
+                "EVSK-L",
+                JdeSpecLocation.LocalUser,
+                null)
+            .Returns(expected);
+
+        var factory = Substitute.For<IEventRulesQueryEngineFactory>();
+        factory.Create(Arg.Any<HUSER>(), Arg.Any<JdeClientOptions>()).Returns(engine);
+
+        var client = new JdeClient(session, new JdeClientOptions(), eventRulesQueryEngineFactory: factory);
+
+        // Act
+        var result = await client.GetEventRulesXmlAsync(
+            "EVSK-L",
+            useCentralLocation: false,
+            dataSourceOverride: "Central Objects - PY920");
+
+        // Assert
+        await Assert.That(result.Count).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task GetDataStructureXmlAsync_DelegatesToFactory()
     {
         // Arrange
@@ -166,6 +234,74 @@ public class JdeClientEventRulesTests
 
         // Act
         var result = await client.GetDataStructureXmlAsync("D0101");
+
+        // Assert
+        await Assert.That(result.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task GetDataStructureXmlAsync_WithCentralLocation_DelegatesToExplicitLocationOverload()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        session.UserHandle.Returns(new HUSER { Handle = new IntPtr(10) });
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeSpecXmlDocument>>(session);
+
+        var engine = Substitute.For<IEventRulesQueryEngine>();
+        var expected = new List<JdeSpecXmlDocument>
+        {
+            new() { SpecKey = "D0101", Xml = "<xml/>" }
+        };
+        engine.GetDataStructureXmlDocuments(
+                "D0101",
+                JdeSpecLocation.CentralObjects,
+                "Central Objects - PY920")
+            .Returns(expected);
+
+        var factory = Substitute.For<IEventRulesQueryEngineFactory>();
+        factory.Create(Arg.Any<HUSER>(), Arg.Any<JdeClientOptions>()).Returns(engine);
+
+        var client = new JdeClient(session, new JdeClientOptions(), eventRulesQueryEngineFactory: factory);
+
+        // Act
+        var result = await client.GetDataStructureXmlAsync(
+            "D0101",
+            useCentralLocation: true,
+            dataSourceOverride: "Central Objects - PY920");
+
+        // Assert
+        await Assert.That(result.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task GetDataStructureXmlAsync_WithLocalLocation_IgnoresDataSourceOverride()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        session.UserHandle.Returns(new HUSER { Handle = new IntPtr(11) });
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeSpecXmlDocument>>(session);
+
+        var engine = Substitute.For<IEventRulesQueryEngine>();
+        var expected = new List<JdeSpecXmlDocument>
+        {
+            new() { SpecKey = "D0101", Xml = "<xml/>" }
+        };
+        engine.GetDataStructureXmlDocuments(
+                "D0101",
+                JdeSpecLocation.LocalUser,
+                null)
+            .Returns(expected);
+
+        var factory = Substitute.For<IEventRulesQueryEngineFactory>();
+        factory.Create(Arg.Any<HUSER>(), Arg.Any<JdeClientOptions>()).Returns(engine);
+
+        var client = new JdeClient(session, new JdeClientOptions(), eventRulesQueryEngineFactory: factory);
+
+        // Act
+        var result = await client.GetDataStructureXmlAsync(
+            "D0101",
+            useCentralLocation: false,
+            dataSourceOverride: "Central Objects - PY920");
 
         // Assert
         await Assert.That(result.Count).IsEqualTo(1);

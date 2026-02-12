@@ -183,6 +183,57 @@ public class JdeClientTests
     }
 
     [Test]
+    public async Task JdeClient_GetObjectsAsync_WithDataSourceOverride_UsesOverrideAndFallbackFlag()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        var engine = Substitute.For<IF9860QueryEngine>();
+        session.QueryEngine.Returns(engine);
+        session.ExecuteAsync(Arg.Any<Func<List<JdeObjectInfo>>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var action = callInfo.Arg<Func<List<JdeObjectInfo>>>();
+                try
+                {
+                    return Task.FromResult(action());
+                }
+                catch (Exception ex)
+                {
+                    return Task.FromException<List<JdeObjectInfo>>(ex);
+                }
+            });
+
+        var expected = new List<JdeObjectInfo>
+        {
+            new() { ObjectName = "F0101", ObjectType = "TBLE" }
+        };
+
+        engine.QueryObjects(
+                JdeObjectType.Table,
+                "F01*",
+                null,
+                25,
+                "Object Librarian - PY920",
+                false)
+            .Returns(expected);
+
+        var client = new JdeClient(session, new JdeClientOptions());
+
+        // Act
+        var result = await client.GetObjectsAsync(
+            JdeObjectType.Table,
+            "F01*",
+            descriptionPattern: null,
+            maxResults: 25,
+            dataSourceOverride: "Object Librarian - PY920",
+            allowDataSourceFallback: false);
+
+        // Assert
+        await Assert.That(result.Count).IsEqualTo(1);
+        await Assert.That(result[0].ObjectName).IsEqualTo("F0101");
+    }
+
+    [Test]
     public async Task JdeClient_GetEventRulesTreeAsync_NullObject_ThrowsArgumentNullException()
     {
         // Arrange
@@ -195,6 +246,150 @@ public class JdeClientTests
 
         // Assert
         await Assert.That(exception.ParamName).IsEqualTo("jdeObject");
+    }
+
+    [Test]
+    public async Task JdeClient_GetBusinessFunctionCodeAsync_BlankObject_ThrowsArgumentException()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        var client = new JdeClient(session, new JdeClientOptions());
+
+        // Act
+        var exception = await Assert.That(async () => await client.GetBusinessFunctionCodeAsync("  "))
+            .ThrowsExactly<ArgumentException>();
+
+        // Assert
+        await Assert.That(exception.ParamName).IsEqualTo("objectName");
+    }
+
+    [Test]
+    public async Task JdeClient_GetBusinessFunctionCodeAsync_WithLocation_BlankObject_ThrowsArgumentException()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        var client = new JdeClient(session, new JdeClientOptions());
+
+        // Act
+        var exception = await Assert.That(async () =>
+                await client.GetBusinessFunctionCodeAsync(
+                    "  ",
+                    functionName: null,
+                    JdeBusinessFunctionCodeLocation.Central,
+                    "PY920"))
+            .ThrowsExactly<ArgumentException>();
+
+        // Assert
+        await Assert.That(exception.ParamName).IsEqualTo("objectName");
+    }
+
+    [Test]
+    public async Task JdeClient_GetBusinessFunctionCodeAsync_WithExplicitLocation_NoRecords_ThrowsJdeApiException()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeBusinessFunctionCodeDocument>>(session);
+        session.UserHandle.Returns(new HUSER { Handle = new IntPtr(1) });
+
+        var engine = Substitute.For<IEventRulesQueryEngine>();
+        engine.GetBusinessFunctionCodeDocuments(
+                "B5500725",
+                functionName: null,
+                JdeBusinessFunctionCodeLocation.Central,
+                "PY920")
+            .Returns(Array.Empty<JdeBusinessFunctionCodeDocument>());
+
+        var factory = Substitute.For<IEventRulesQueryEngineFactory>();
+        factory.Create(Arg.Any<HUSER>(), Arg.Any<JdeClientOptions>()).Returns(engine);
+
+        var client = new JdeClient(
+            session,
+            new JdeClientOptions(),
+            eventRulesQueryEngineFactory: factory);
+
+        // Act
+        var exception = await Assert.That(async () =>
+                await client.GetBusinessFunctionCodeAsync(
+                    "B5500725",
+                    functionName: null,
+                    JdeBusinessFunctionCodeLocation.Central,
+                    "PY920"))
+            .ThrowsExactly<JdeApiException>();
+
+        // Assert
+        await Assert.That(exception.ApiFunction).IsEqualTo("GetBusinessFunctionCodeAsync");
+        await Assert.That(exception.Message).Contains("do not fall back");
+    }
+
+    [Test]
+    public async Task JdeClient_GetBusinessFunctionCodeAsync_WithExplicitLocalLocation_NoRecords_ThrowsJdeApiException()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeBusinessFunctionCodeDocument>>(session);
+        session.UserHandle.Returns(new HUSER { Handle = new IntPtr(1) });
+
+        var engine = Substitute.For<IEventRulesQueryEngine>();
+        engine.GetBusinessFunctionCodeDocuments(
+                "B5500725",
+                functionName: null,
+                JdeBusinessFunctionCodeLocation.Local,
+                null)
+            .Returns(Array.Empty<JdeBusinessFunctionCodeDocument>());
+
+        var factory = Substitute.For<IEventRulesQueryEngineFactory>();
+        factory.Create(Arg.Any<HUSER>(), Arg.Any<JdeClientOptions>()).Returns(engine);
+
+        var client = new JdeClient(
+            session,
+            new JdeClientOptions(),
+            eventRulesQueryEngineFactory: factory);
+
+        // Act
+        var exception = await Assert.That(async () =>
+                await client.GetBusinessFunctionCodeAsync(
+                    "B5500725",
+                    functionName: null,
+                    JdeBusinessFunctionCodeLocation.Local))
+            .ThrowsExactly<JdeApiException>();
+
+        // Assert
+        await Assert.That(exception.ApiFunction).IsEqualTo("GetBusinessFunctionCodeAsync");
+        await Assert.That(exception.Message).Contains("do not fall back");
+    }
+
+    [Test]
+    public async Task JdeClient_GetBusinessFunctionCodeAsync_AutoLocation_NoRecords_ReturnsEmpty()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeBusinessFunctionCodeDocument>>(session);
+        session.UserHandle.Returns(new HUSER { Handle = new IntPtr(1) });
+
+        var engine = Substitute.For<IEventRulesQueryEngine>();
+        engine.GetBusinessFunctionCodeDocuments(
+                "B5500725",
+                functionName: null,
+                JdeBusinessFunctionCodeLocation.Auto,
+                null)
+            .Returns(Array.Empty<JdeBusinessFunctionCodeDocument>());
+
+        var factory = Substitute.For<IEventRulesQueryEngineFactory>();
+        factory.Create(Arg.Any<HUSER>(), Arg.Any<JdeClientOptions>()).Returns(engine);
+
+        var client = new JdeClient(
+            session,
+            new JdeClientOptions(),
+            eventRulesQueryEngineFactory: factory);
+
+        // Act
+        var result = await client.GetBusinessFunctionCodeAsync(
+            "B5500725",
+            functionName: null,
+            JdeBusinessFunctionCodeLocation.Auto);
+
+        // Assert
+        await Assert.That(result.Count).IsEqualTo(0);
     }
 
     [Test]
@@ -247,6 +442,119 @@ public class JdeClientTests
         await Assert.That(result!.Description).IsEqualTo("Address Book Master");
         await Assert.That(result.SystemCode).IsEqualTo("01");
         await Assert.That(result.ProductCode).IsEqualTo("AB");
+    }
+
+    [Test]
+    public async Task JdeClient_GetTableInfoAsync_WithOverride_PassesObjectLibrarianParameters()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        var f9860Engine = Substitute.For<IF9860QueryEngine>();
+        session.QueryEngine.Returns(f9860Engine);
+        session.ExecuteAsync(Arg.Any<Func<JdeTableInfo?>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var action = callInfo.Arg<Func<JdeTableInfo?>>();
+                try
+                {
+                    return Task.FromResult(action());
+                }
+                catch (Exception ex)
+                {
+                    return Task.FromException<JdeTableInfo?>(ex);
+                }
+            });
+
+        var tableEngine = Substitute.For<IJdeTableQueryEngine>();
+        var tableFactory = Substitute.For<IJdeTableQueryEngineFactory>();
+        tableFactory.Create(Arg.Any<JdeClientOptions>()).Returns(tableEngine);
+
+        tableEngine.GetTableInfo("F0101", null, null).Returns(new JdeTableInfo
+        {
+            TableName = "F0101",
+            Columns = new List<JdeColumn>()
+        });
+
+        f9860Engine.GetObjectByName(
+                "F0101",
+                JdeObjectType.Table,
+                "Object Librarian - PY920",
+                false)
+            .Returns(new JdeObjectInfo
+            {
+                ObjectName = "F0101",
+                ObjectType = "TBLE",
+                Description = "Address Book Master"
+            });
+
+        var client = new JdeClient(session, new JdeClientOptions(), tableFactory);
+
+        // Act
+        var result = await client.GetTableInfoAsync(
+            "F0101",
+            objectLibrarianDataSourceOverride: "Object Librarian - PY920",
+            allowObjectLibrarianFallback: false);
+
+        // Assert
+        await Assert.That(result is not null).IsTrue();
+        await Assert.That(result!.Description).IsEqualTo("Address Book Master");
+    }
+
+    [Test]
+    public async Task JdeClient_GetBusinessViewInfoAsync_WithOverride_PassesObjectLibrarianParameters()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        var f9860Engine = Substitute.For<IF9860QueryEngine>();
+        session.QueryEngine.Returns(f9860Engine);
+        session.ExecuteAsync(Arg.Any<Func<JdeBusinessViewInfo?>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var action = callInfo.Arg<Func<JdeBusinessViewInfo?>>();
+                try
+                {
+                    return Task.FromResult(action());
+                }
+                catch (Exception ex)
+                {
+                    return Task.FromException<JdeBusinessViewInfo?>(ex);
+                }
+            });
+
+        var tableEngine = Substitute.For<IJdeTableQueryEngine>();
+        var tableFactory = Substitute.For<IJdeTableQueryEngineFactory>();
+        tableFactory.Create(Arg.Any<JdeClientOptions>()).Returns(tableEngine);
+
+        tableEngine.GetBusinessViewInfo("V0101A").Returns(new JdeBusinessViewInfo
+        {
+            ViewName = "V0101A"
+        });
+
+        f9860Engine.GetObjectByName(
+                "V0101A",
+                JdeObjectType.BusinessView,
+                "Object Librarian - PY920",
+                false)
+            .Returns(new JdeObjectInfo
+            {
+                ObjectName = "V0101A",
+                ObjectType = "BSVW",
+                Description = "Address Book View",
+                SystemCode = "01"
+            });
+
+        var client = new JdeClient(session, new JdeClientOptions(), tableFactory);
+
+        // Act
+        var result = await client.GetBusinessViewInfoAsync(
+            "V0101A",
+            objectLibrarianDataSourceOverride: "Object Librarian - PY920",
+            allowObjectLibrarianFallback: false);
+
+        // Assert
+        await Assert.That(result is not null).IsTrue();
+        await Assert.That(result!.Description).IsEqualTo("Address Book View");
+        await Assert.That(result.SystemCode).IsEqualTo("01");
     }
 
     [Test]

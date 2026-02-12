@@ -14,11 +14,18 @@ namespace JdeClient.TestConsole;
 class Program
 {
     private static List<JdeObjectInfo>? cachedTables;
+    private static string? cachedTablesLocationKey;
     private static List<JdeObjectInfo> lastSearchResults = new();
     private static JdeObjectInfo? selectedTable;
+    private static ObjectLocationSelection selectedTableLocation = ObjectLocationSelection.Local;
+    private static ObjectLocationSelection lastTableSearchLocation = ObjectLocationSelection.Local;
     private static List<JdeObjectInfo>? cachedViews;
+    private static string? cachedViewsLocationKey;
     private static List<JdeObjectInfo> lastViewSearchResults = new();
     private static JdeObjectInfo? selectedView;
+    private static ObjectLocationSelection selectedViewLocation = ObjectLocationSelection.Local;
+    private static ObjectLocationSelection lastViewSearchLocation = ObjectLocationSelection.Local;
+    private static ObjectLocationSelection currentObjectLocation = ObjectLocationSelection.Local;
     private static List<(string Path, JdeEventRulesNode Node)> lastEventRulesNodes = new();
 
     static async Task<int> Main(string[] args)
@@ -251,7 +258,7 @@ class Program
         try
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            var tables = await LoadTableCatalogAsync(client, forceReload: true);
+            var tables = await LoadTableCatalogAsync(client, forceReload: true, currentObjectLocation);
             sw.Stop();
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine($"SUCCESS ({tables.Count} tables, {sw.ElapsedMilliseconds}ms)");
@@ -311,8 +318,8 @@ class Program
             return;
         }
 
-        await TestTableSpecs(client, selectedTable.ObjectName);
-        await TestTableQueryStream(client, selectedTable.ObjectName);
+        await TestTableSpecs(client, selectedTable.ObjectName, currentObjectLocation);
+        await TestTableQueryStream(client, selectedTable.ObjectName, currentObjectLocation);
     }
 
     static async Task TestBusinessViewWorkflow(JdeClient.Core.JdeClient client)
@@ -324,7 +331,7 @@ class Program
         try
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            var views = await LoadViewCatalogAsync(client, forceReload: true);
+            var views = await LoadViewCatalogAsync(client, forceReload: true, currentObjectLocation);
             sw.Stop();
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine($"SUCCESS ({views.Count} views, {sw.ElapsedMilliseconds}ms)");
@@ -385,17 +392,23 @@ class Program
             return;
         }
 
-        await TestBusinessViewSpecs(client, selectedView.ObjectName);
-        await TestBusinessViewQueryStream(client, selectedView.ObjectName);
+        await TestBusinessViewSpecs(client, selectedView.ObjectName, currentObjectLocation);
+        await TestBusinessViewQueryStream(client, selectedView.ObjectName, currentObjectLocation);
     }
 
-    static async Task TestTableSpecs(JdeClient.Core.JdeClient client, string tableName)
+    static async Task TestTableSpecs(
+        JdeClient.Core.JdeClient client,
+        string tableName,
+        ObjectLocationSelection location)
     {
         Console.Write($"Loading specs for {tableName}... ");
         try
         {
             Console.ForegroundColor = ConsoleColor.Green;
-            var tableInfo = await client.GetTableInfoAsync(tableName);
+            var tableInfo = await client.GetTableInfoAsync(
+                tableName,
+                location.ObjectLibrarianDataSourceOverride,
+                location.AllowFallback);
             Console.WriteLine(tableInfo == null ? "NOT FOUND" : "SUCCESS");
             Console.ResetColor();
 
@@ -416,13 +429,19 @@ class Program
         Console.WriteLine();
     }
 
-    static async Task TestBusinessViewSpecs(JdeClient.Core.JdeClient client, string viewName)
+    static async Task TestBusinessViewSpecs(
+        JdeClient.Core.JdeClient client,
+        string viewName,
+        ObjectLocationSelection location)
     {
         Console.Write($"Loading specs for {viewName}... ");
         try
         {
             Console.ForegroundColor = ConsoleColor.Green;
-            var viewInfo = await client.GetBusinessViewInfoAsync(viewName);
+            var viewInfo = await client.GetBusinessViewInfoAsync(
+                viewName,
+                location.ObjectLibrarianDataSourceOverride,
+                location.AllowFallback);
             Console.WriteLine(viewInfo == null ? "NOT FOUND" : "SUCCESS");
             Console.ResetColor();
 
@@ -445,13 +464,24 @@ class Program
         Console.WriteLine();
     }
 
-    static Task TestTableQueryStream(JdeClient.Core.JdeClient client, string tableName)
+    static Task TestTableQueryStream(
+        JdeClient.Core.JdeClient client,
+        string tableName,
+        ObjectLocationSelection location)
     {
         const int maxRows = 25;
         Console.Write($"Streaming {tableName} (max {maxRows} rows)... ");
         try
         {
-            var stream = client.QueryTableStream(tableName, maxRows);
+            var stream = client.QueryTableStream(
+                tableName,
+                filters: null,
+                sorts: null,
+                maxRows: maxRows,
+                dataSourceOverride: location.QueryDataSourceOverride,
+                indexId: null,
+                allowDataSourceFallback: location.AllowFallback,
+                cancellationToken: CancellationToken.None);
             int rowCount = 0;
             List<Dictionary<string, object>> previewRows = new();
 
@@ -491,7 +521,10 @@ class Program
         return Task.CompletedTask;
     }
 
-    static Task TestBusinessViewQueryStream(JdeClient.Core.JdeClient client, string viewName)
+    static Task TestBusinessViewQueryStream(
+        JdeClient.Core.JdeClient client,
+        string viewName,
+        ObjectLocationSelection location)
     {
         const int maxRows = 25;
         Console.Write($"Streaming {viewName} (max {maxRows} rows)... ");
@@ -502,8 +535,8 @@ class Program
                 filters: Array.Empty<JdeFilter>(),
                 sorts: null,
                 maxRows: maxRows,
-                dataSourceOverride: null,
-                allowDataSourceFallback: true,
+                dataSourceOverride: location.QueryDataSourceOverride,
+                allowDataSourceFallback: location.AllowFallback,
                 cancellationToken: CancellationToken.None);
             int rowCount = 0;
             List<Dictionary<string, object>> previewRows = new();
@@ -552,6 +585,8 @@ class Program
             Console.WriteLine("=================================================");
             Console.WriteLine("Interactive Menu");
             Console.WriteLine("=================================================");
+            Console.WriteLine($"Current object location: {currentObjectLocation.DisplayName}");
+            Console.WriteLine("0. Set object search pathcode/location");
             Console.WriteLine("1. Run workflow smoke test");
             Console.WriteLine("2. Search for tables");
             Console.WriteLine("3. Select table from last search");
@@ -568,14 +603,18 @@ class Program
             Console.WriteLine("14. Load event rules tree");
             Console.WriteLine("15. Load event rules lines");
             Console.WriteLine("16. Export project to PAR (OMW)");
-            Console.WriteLine("17. Disconnect and exit");
+            Console.WriteLine("17. Load C business function code");
+            Console.WriteLine("18. Disconnect and exit");
             Console.WriteLine();
-            Console.Write("Select option (1-17): ");
+            Console.Write("Select option (0-18): ");
 
             var choice = Console.ReadLine();
 
             switch (choice)
             {
+                case "0":
+                    await SelectObjectLocationAsync(client);
+                    break;
                 case "1":
                     await TestWpfWorkflow(client);
                     await TestBusinessViewWorkflow(client);
@@ -626,6 +665,9 @@ class Program
                     await ExportProjectToPar(client);
                     break;
                 case "17":
+                    await LoadBusinessFunctionCode(client);
+                    break;
+                case "18":
                     Console.WriteLine("\nDisconnecting...");
                     await client.DisconnectAsync();
                     Console.WriteLine("Goodbye!");
@@ -637,23 +679,95 @@ class Program
         }
     }
 
+    static async Task SelectObjectLocationAsync(JdeClient.Core.JdeClient client)
+    {
+        var availablePathCodes = await LoadAvailablePathCodesAsync(client);
+        var options = new List<ObjectLocationSelection> { ObjectLocationSelection.Local };
+        options.AddRange(availablePathCodes.Select(ObjectLocationSelection.FromPathCode));
+
+        Console.WriteLine($"\nChoose object search location (current: {currentObjectLocation.DisplayName}):");
+        for (int i = 0; i < options.Count; i++)
+        {
+            Console.WriteLine($"  {i + 1,2}. {options[i].DisplayName}");
+        }
+
+        int customOption = options.Count + 1;
+        Console.WriteLine($"  {customOption,2}. Custom path code");
+        Console.Write($"Selection (1-{customOption}, Enter to keep current): ");
+        string? selection = Console.ReadLine()?.Trim();
+        if (string.IsNullOrWhiteSpace(selection))
+        {
+            return;
+        }
+
+        if (int.TryParse(selection, out int selectedIndex))
+        {
+            if (selectedIndex >= 1 && selectedIndex <= options.Count)
+            {
+                currentObjectLocation = options[selectedIndex - 1];
+                Console.WriteLine($"Object location set to {currentObjectLocation.DisplayName}.");
+                return;
+            }
+
+            if (selectedIndex == customOption)
+            {
+                Console.Write("Enter custom path code (blank for Local): ");
+                string? custom = Console.ReadLine();
+                currentObjectLocation = ObjectLocationSelection.FromPathCode(custom);
+                Console.WriteLine($"Object location set to {currentObjectLocation.DisplayName}.");
+                return;
+            }
+        }
+
+        // Allow entering the path code directly.
+        currentObjectLocation = ObjectLocationSelection.FromPathCode(selection);
+        Console.WriteLine($"Object location set to {currentObjectLocation.DisplayName}.");
+    }
+
+    static async Task<List<string>> LoadAvailablePathCodesAsync(JdeClient.Core.JdeClient client)
+    {
+        try
+        {
+            var pathCodes = await client.GetAvailablePathCodesAsync();
+            return pathCodes
+                .Where(code => !string.IsNullOrWhiteSpace(code))
+                .Select(code => code.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(code => code, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: unable to load path codes from F00942: {ex.Message}");
+            return new List<string>();
+        }
+    }
+
     static async Task SearchTables(JdeClient.Core.JdeClient client, bool forceReload)
     {
         Console.Write("\nEnter table name pattern (wildcards with * supported): ");
         var pattern = Console.ReadLine()?.Trim() ?? string.Empty;
+        var location = currentObjectLocation;
+        string? objectLibrarianDataSourceOverride = location.ObjectLibrarianDataSourceOverride;
+        bool allowObjectLibrarianFallback = location.AllowFallback;
 
-        Console.WriteLine($"\nSearching for tables matching '{pattern}'...");
+        Console.WriteLine($"\nSearching for tables matching '{pattern}' in {location.DisplayName}...");
         List<JdeObjectInfo> matches;
         if (string.IsNullOrWhiteSpace(pattern))
         {
-            matches = await LoadTableCatalogAsync(client, forceReload);
+            matches = await LoadTableCatalogAsync(client, forceReload, location);
         }
         else
         {
-            matches = await client.GetObjectsAsync(JdeObjectType.Table, searchPattern: pattern, maxResults: 50000);
+            matches = await client.GetObjectsAsync(
+                JdeObjectType.Table,
+                searchPattern: pattern,
+                maxResults: 50000,
+                dataSourceOverride: objectLibrarianDataSourceOverride,
+                allowDataSourceFallback: allowObjectLibrarianFallback);
         }
 
-        Console.WriteLine($"Found {matches.Count} matches:");
+        Console.WriteLine($"Found {matches.Count} matches in {location.DisplayName}:");
         for (int i = 0; i < matches.Take(20).Count(); i++)
         {
             var table = matches[i];
@@ -665,9 +779,11 @@ class Program
         }
 
         lastSearchResults = matches;
+        lastTableSearchLocation = location;
         if (matches.Count == 1)
         {
             selectedTable = matches[0];
+            selectedTableLocation = location;
             Console.WriteLine($"Selected {selectedTable.ObjectName}");
         }
     }
@@ -676,19 +792,27 @@ class Program
     {
         Console.Write("\nEnter view name pattern (wildcards with * supported): ");
         var pattern = Console.ReadLine()?.Trim() ?? string.Empty;
+        var location = currentObjectLocation;
+        string? objectLibrarianDataSourceOverride = location.ObjectLibrarianDataSourceOverride;
+        bool allowObjectLibrarianFallback = location.AllowFallback;
 
-        Console.WriteLine($"\nSearching for views matching '{pattern}'...");
+        Console.WriteLine($"\nSearching for views matching '{pattern}' in {location.DisplayName}...");
         List<JdeObjectInfo> matches;
         if (string.IsNullOrWhiteSpace(pattern))
         {
-            matches = await LoadViewCatalogAsync(client, forceReload);
+            matches = await LoadViewCatalogAsync(client, forceReload, location);
         }
         else
         {
-            matches = await client.GetObjectsAsync(JdeObjectType.BusinessView, searchPattern: pattern, maxResults: 50000);
+            matches = await client.GetObjectsAsync(
+                JdeObjectType.BusinessView,
+                searchPattern: pattern,
+                maxResults: 50000,
+                dataSourceOverride: objectLibrarianDataSourceOverride,
+                allowDataSourceFallback: allowObjectLibrarianFallback);
         }
 
-        Console.WriteLine($"Found {matches.Count} matches:");
+        Console.WriteLine($"Found {matches.Count} matches in {location.DisplayName}:");
         for (int i = 0; i < matches.Take(20).Count(); i++)
         {
             var view = matches[i];
@@ -700,9 +824,11 @@ class Program
         }
 
         lastViewSearchResults = matches;
+        lastViewSearchLocation = location;
         if (matches.Count == 1)
         {
             selectedView = matches[0];
+            selectedViewLocation = location;
             Console.WriteLine($"Selected {selectedView.ObjectName}");
         }
     }
@@ -729,6 +855,7 @@ class Program
         }
 
         selectedTable = lastSearchResults[index - 1];
+        selectedTableLocation = lastTableSearchLocation;
         Console.WriteLine($"Selected {selectedTable.ObjectName}");
     }
 
@@ -754,19 +881,23 @@ class Program
         }
 
         selectedView = lastViewSearchResults[index - 1];
+        selectedViewLocation = lastViewSearchLocation;
         Console.WriteLine($"Selected {selectedView.ObjectName}");
     }
 
     static async Task OpenTableSpecs(JdeClient.Core.JdeClient client)
     {
-        string tableName = ResolveSelectedTableName();
+        var (tableName, location) = ResolveSelectedTableContext();
         if (string.IsNullOrWhiteSpace(tableName))
         {
             return;
         }
 
-        Console.WriteLine($"\nRetrieving specs for {tableName}...");
-        var tableInfo = await client.GetTableInfoAsync(tableName);
+        Console.WriteLine($"\nRetrieving specs for {tableName} from {location.DisplayName}...");
+        var tableInfo = await client.GetTableInfoAsync(
+            tableName,
+            location.ObjectLibrarianDataSourceOverride,
+            location.AllowFallback);
 
         if (tableInfo != null)
         {
@@ -796,14 +927,17 @@ class Program
 
     static async Task OpenViewSpecs(JdeClient.Core.JdeClient client)
     {
-        string viewName = ResolveSelectedViewName();
+        var (viewName, location) = ResolveSelectedViewContext();
         if (string.IsNullOrWhiteSpace(viewName))
         {
             return;
         }
 
-        Console.WriteLine($"\nRetrieving specs for {viewName}...");
-        var viewInfo = await client.GetBusinessViewInfoAsync(viewName);
+        Console.WriteLine($"\nRetrieving specs for {viewName} from {location.DisplayName}...");
+        var viewInfo = await client.GetBusinessViewInfoAsync(
+            viewName,
+            location.ObjectLibrarianDataSourceOverride,
+            location.AllowFallback);
 
         if (viewInfo != null)
         {
@@ -1041,14 +1175,17 @@ class Program
 
     static async Task OpenQueryColumns(JdeClient.Core.JdeClient client)
     {
-        string tableName = ResolveSelectedTableName();
+        var (tableName, location) = ResolveSelectedTableContext();
         if (string.IsNullOrWhiteSpace(tableName))
         {
             return;
         }
 
-        Console.WriteLine($"\nLoading columns for {tableName}...");
-        var tableInfo = await client.GetTableInfoAsync(tableName);
+        Console.WriteLine($"\nLoading columns for {tableName} from {location.DisplayName}...");
+        var tableInfo = await client.GetTableInfoAsync(
+            tableName,
+            location.ObjectLibrarianDataSourceOverride,
+            location.AllowFallback);
         if (tableInfo == null)
         {
             Console.WriteLine("Table not found.");
@@ -1061,14 +1198,17 @@ class Program
 
     static async Task OpenViewColumns(JdeClient.Core.JdeClient client)
     {
-        string viewName = ResolveSelectedViewName();
+        var (viewName, location) = ResolveSelectedViewContext();
         if (string.IsNullOrWhiteSpace(viewName))
         {
             return;
         }
 
-        Console.WriteLine($"\nLoading columns for {viewName}...");
-        var viewInfo = await client.GetBusinessViewInfoAsync(viewName);
+        Console.WriteLine($"\nLoading columns for {viewName} from {location.DisplayName}...");
+        var viewInfo = await client.GetBusinessViewInfoAsync(
+            viewName,
+            location.ObjectLibrarianDataSourceOverride,
+            location.AllowFallback);
         if (viewInfo == null)
         {
             Console.WriteLine("View not found.");
@@ -1081,7 +1221,7 @@ class Program
 
     static Task RunQueryStream(JdeClient.Core.JdeClient client)
     {
-        string tableName = ResolveSelectedTableName();
+        var (tableName, location) = ResolveSelectedTableContext();
         if (string.IsNullOrWhiteSpace(tableName))
         {
             return Task.CompletedTask;
@@ -1103,9 +1243,9 @@ class Program
             filters: filters,
             sorts: null,
             maxRows: maxRows,
-            dataSourceOverride: null,
+            dataSourceOverride: location.QueryDataSourceOverride,
             indexId: null,
-            allowDataSourceFallback: true,
+            allowDataSourceFallback: location.AllowFallback,
             cancellationToken: cts.Token);
         int rowCount = 0;
         foreach (var row in stream)
@@ -1131,7 +1271,7 @@ class Program
 
     static Task RunViewQueryStream(JdeClient.Core.JdeClient client)
     {
-        string viewName = ResolveSelectedViewName();
+        var (viewName, location) = ResolveSelectedViewContext();
         if (string.IsNullOrWhiteSpace(viewName))
         {
             return Task.CompletedTask;
@@ -1153,8 +1293,8 @@ class Program
             filters: filters,
             sorts: null,
             maxRows: maxRows,
-            dataSourceOverride: null,
-            allowDataSourceFallback: true,
+            dataSourceOverride: location.QueryDataSourceOverride,
+            allowDataSourceFallback: location.AllowFallback,
             cancellationToken: cts.Token);
         int rowCount = 0;
         foreach (var row in stream)
@@ -1178,50 +1318,74 @@ class Program
         return Task.CompletedTask;
     }
 
-    static async Task<List<JdeObjectInfo>> LoadTableCatalogAsync(JdeClient.Core.JdeClient client, bool forceReload)
+    static async Task<List<JdeObjectInfo>> LoadTableCatalogAsync(
+        JdeClient.Core.JdeClient client,
+        bool forceReload,
+        ObjectLocationSelection location)
     {
-        if (!forceReload && cachedTables != null && cachedTables.Count > 0)
+        string cacheKey = location.CacheKey;
+        if (!forceReload &&
+            cachedTables != null &&
+            cachedTables.Count > 0 &&
+            string.Equals(cachedTablesLocationKey, cacheKey, StringComparison.OrdinalIgnoreCase))
         {
             return cachedTables;
         }
 
-        var tables = await client.GetObjectsAsync(JdeObjectType.Table, maxResults: 50000);
+        var tables = await client.GetObjectsAsync(
+            JdeObjectType.Table,
+            maxResults: 50000,
+            dataSourceOverride: location.ObjectLibrarianDataSourceOverride,
+            allowDataSourceFallback: location.AllowFallback);
         cachedTables = tables;
+        cachedTablesLocationKey = cacheKey;
         return tables;
     }
 
-    static async Task<List<JdeObjectInfo>> LoadViewCatalogAsync(JdeClient.Core.JdeClient client, bool forceReload)
+    static async Task<List<JdeObjectInfo>> LoadViewCatalogAsync(
+        JdeClient.Core.JdeClient client,
+        bool forceReload,
+        ObjectLocationSelection location)
     {
-        if (!forceReload && cachedViews != null && cachedViews.Count > 0)
+        string cacheKey = location.CacheKey;
+        if (!forceReload &&
+            cachedViews != null &&
+            cachedViews.Count > 0 &&
+            string.Equals(cachedViewsLocationKey, cacheKey, StringComparison.OrdinalIgnoreCase))
         {
             return cachedViews;
         }
 
-        var views = await client.GetObjectsAsync(JdeObjectType.BusinessView, maxResults: 50000);
+        var views = await client.GetObjectsAsync(
+            JdeObjectType.BusinessView,
+            maxResults: 50000,
+            dataSourceOverride: location.ObjectLibrarianDataSourceOverride,
+            allowDataSourceFallback: location.AllowFallback);
         cachedViews = views;
+        cachedViewsLocationKey = cacheKey;
         return views;
     }
 
-    static string ResolveSelectedTableName()
+    static (string Name, ObjectLocationSelection Location) ResolveSelectedTableContext()
     {
         if (selectedTable != null)
         {
-            return selectedTable.ObjectName;
+            return (selectedTable.ObjectName, selectedTableLocation);
         }
 
         Console.Write("\nEnter table name: ");
-        return Console.ReadLine()?.Trim() ?? string.Empty;
+        return (Console.ReadLine()?.Trim() ?? string.Empty, currentObjectLocation);
     }
 
-    static string ResolveSelectedViewName()
+    static (string Name, ObjectLocationSelection Location) ResolveSelectedViewContext()
     {
         if (selectedView != null)
         {
-            return selectedView.ObjectName;
+            return (selectedView.ObjectName, selectedViewLocation);
         }
 
         Console.Write("\nEnter business view name: ");
-        return Console.ReadLine()?.Trim() ?? string.Empty;
+        return (Console.ReadLine()?.Trim() ?? string.Empty, currentObjectLocation);
     }
 
     static List<JdeFilter> PromptFilters()
@@ -1384,10 +1548,10 @@ class Program
                 Console.WriteLine($"... and {lines.Count - 60} more");
             }
 
-            await PromptSaveEventRulesXmlAsync(client, entry.Path, entry.Node.EventSpecKey);
+            await PromptSaveEventRulesXmlAsync(client, entry.Path, entry.Node.EventSpecKey, currentObjectLocation);
             if (!string.IsNullOrWhiteSpace(entry.Node.DataStructureName))
             {
-                await PromptSaveDataStructureXmlAsync(client, entry.Path, entry.Node.DataStructureName);
+                await PromptSaveDataStructureXmlAsync(client, entry.Path, entry.Node.DataStructureName, currentObjectLocation);
             }
 
         }
@@ -1398,6 +1562,122 @@ class Program
             Console.ResetColor();
         }
     }
+
+    static async Task LoadBusinessFunctionCode(JdeClient.Core.JdeClient client)
+    {
+        Console.Write("\nEnter business function object (e.g. B5500725): ");
+        string objectName = Console.ReadLine()?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(objectName))
+        {
+            Console.WriteLine("Object name is required.");
+            return;
+        }
+
+        Console.Write("Enter function name filter (optional): ");
+        string? functionName = Console.ReadLine()?.Trim();
+        if (string.IsNullOrWhiteSpace(functionName))
+        {
+            functionName = null;
+        }
+
+        var (location, dataSourceOverride) = PromptBusinessFunctionSourceLocation();
+        string sourceLabel = location switch
+        {
+            JdeBusinessFunctionCodeLocation.Local => "Local",
+            JdeBusinessFunctionCodeLocation.Central => string.IsNullOrWhiteSpace(dataSourceOverride)
+                ? "Central (default)"
+                : $"Central ({dataSourceOverride})",
+            _ => "Auto (Local -> Central)"
+        };
+
+        Console.WriteLine($"\nLoading C business function payloads for {objectName} using {sourceLabel}...");
+        try
+        {
+            var documents = await client.GetBusinessFunctionCodeAsync(
+                objectName,
+                functionName,
+                location,
+                dataSourceOverride);
+            if (documents.Count == 0)
+            {
+                Console.WriteLine("No business function code records found.");
+                return;
+            }
+
+            Console.WriteLine($"Loaded {documents.Count} record(s).");
+            for (int i = 0; i < documents.Take(20).Count(); i++)
+            {
+                var doc = documents[i];
+                string sourceHint = doc.SourceLooksLikeCode ? "code" : "text";
+                string name = string.IsNullOrWhiteSpace(doc.FunctionName) ? "<unknown>" : doc.FunctionName;
+                Console.WriteLine(
+                    $"  {i + 1,3}. {name,-34} src={doc.SourceFileName,-15} bytes={doc.PayloadSize,7} {sourceHint}");
+            }
+            if (documents.Count > 20)
+            {
+                Console.WriteLine($"  ... and {documents.Count - 20} more");
+            }
+
+            var preview = documents[0];
+            if (!string.IsNullOrWhiteSpace(preview.SourceCode))
+            {
+                Console.WriteLine("\nPreview (first 80 lines):");
+                foreach (var line in preview.SourceCode.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).Take(80))
+                {
+                    Console.WriteLine(line);
+                }
+            }
+            else
+            {
+                Console.WriteLine("\nNo decoded source text was produced for the first record.");
+            }
+
+            await PromptSaveBusinessFunctionCodeAsync(objectName, documents);
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"FAILED: {ex.Message}");
+            Console.ResetColor();
+        }
+    }
+
+    static (JdeBusinessFunctionCodeLocation Location, string? DataSourceOverride) PromptBusinessFunctionSourceLocation()
+    {
+        Console.WriteLine("\nChoose BUSFUNC source location:");
+        Console.WriteLine("  1. Local");
+        Console.WriteLine("  2. Central (PY920)");
+        Console.WriteLine("  3. Central (PD920)");
+        Console.WriteLine("  4. Auto (Local, then default central)");
+        Console.WriteLine("  5. Central (custom path code/data source)");
+        Console.Write("Selection (1-5, default 4): ");
+
+        string selection = Console.ReadLine()?.Trim() ?? string.Empty;
+        if (selection == "1")
+        {
+            return (JdeBusinessFunctionCodeLocation.Local, null);
+        }
+
+        if (selection == "2")
+        {
+            return (JdeBusinessFunctionCodeLocation.Central, "PY920");
+        }
+
+        if (selection == "3")
+        {
+            return (JdeBusinessFunctionCodeLocation.Central, "PD920");
+        }
+
+        if (selection == "5")
+        {
+            Console.Write("Central path code/data source override (e.g. PY920 or Central Objects - PY920): ");
+            string? overrideInput = Console.ReadLine()?.Trim();
+            return (JdeBusinessFunctionCodeLocation.Central, string.IsNullOrWhiteSpace(overrideInput) ? null : overrideInput);
+        }
+
+        return (JdeBusinessFunctionCodeLocation.Auto, null);
+    }
+
     static void PrintEventRulesDiagnostics(IReadOnlyList<JdeEventRulesDecodeDiagnostics> diagnostics)
     {
         if (diagnostics.Count == 0)
@@ -1483,7 +1763,11 @@ class Program
         }
     }
 
-    static async Task PromptSaveEventRulesXmlAsync(JdeClient.Core.JdeClient client, string nodePath, string eventSpecKey)
+    static async Task PromptSaveEventRulesXmlAsync(
+        JdeClient.Core.JdeClient client,
+        string nodePath,
+        string eventSpecKey,
+        ObjectLocationSelection location)
     {
         Console.Write("\nSave XML to file(s)? (y/N): ");
         string? response = Console.ReadLine();
@@ -1492,7 +1776,12 @@ class Program
             return;
         }
 
-        var documents = await client.GetEventRulesXmlAsync(eventSpecKey);
+        var documents = location.IsLocal
+            ? await client.GetEventRulesXmlAsync(eventSpecKey)
+            : await client.GetEventRulesXmlAsync(
+                eventSpecKey,
+                useCentralLocation: true,
+                dataSourceOverride: location.CentralObjectsDataSourceOverride);
         if (documents.Count == 0)
         {
             Console.WriteLine("No XML documents available.");
@@ -1579,7 +1868,11 @@ class Program
         return builder.ToString();
     }
 
-    static async Task PromptSaveDataStructureXmlAsync(JdeClient.Core.JdeClient client, string nodePath, string templateName)
+    static async Task PromptSaveDataStructureXmlAsync(
+        JdeClient.Core.JdeClient client,
+        string nodePath,
+        string templateName,
+        ObjectLocationSelection location)
     {
         Console.Write($"\nSave DSTMPL XML for {templateName}? (y/N): ");
         string? response = Console.ReadLine();
@@ -1588,7 +1881,12 @@ class Program
             return;
         }
 
-        var documents = await client.GetDataStructureXmlAsync(templateName);
+        var documents = location.IsLocal
+            ? await client.GetDataStructureXmlAsync(templateName)
+            : await client.GetDataStructureXmlAsync(
+                templateName,
+                useCentralLocation: true,
+                dataSourceOverride: location.CentralObjectsDataSourceOverride);
         if (documents.Count == 0)
         {
             Console.WriteLine("No DSTMPL XML documents available.");
@@ -1646,6 +1944,102 @@ class Program
         }
 
         return builder.ToString();
+    }
+
+    static async Task PromptSaveBusinessFunctionCodeAsync(
+        string objectName,
+        IReadOnlyList<JdeBusinessFunctionCodeDocument> documents)
+    {
+        Console.Write("\nSave business function source/payload files? (y/N): ");
+        string? response = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(response) || !response.Trim().Equals("y", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        Console.Write("Output folder (blank for current): ");
+        string? folder = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            folder = Environment.CurrentDirectory;
+        }
+
+        Directory.CreateDirectory(folder);
+
+        int fileCount = 0;
+        foreach (var document in documents)
+        {
+            string functionName = string.IsNullOrWhiteSpace(document.FunctionName) ? "unknown_function" : document.FunctionName;
+            string baseName = BuildBusinessFunctionFileName(objectName, functionName);
+
+            if (!string.IsNullOrWhiteSpace(document.SourceCode))
+            {
+                string sourceExtension = document.SourceLooksLikeCode ? ".c" : ".txt";
+                string sourcePath = Path.Combine(folder, $"{baseName}{sourceExtension}");
+                await File.WriteAllTextAsync(sourcePath, document.SourceCode, Encoding.UTF8);
+                fileCount++;
+            }
+
+            if (!string.IsNullOrWhiteSpace(document.HeaderCode))
+            {
+                string headerPath = Path.Combine(folder, $"{baseName}.h");
+                await File.WriteAllTextAsync(headerPath, document.HeaderCode, Encoding.UTF8);
+                fileCount++;
+            }
+
+            if (document.Payload.Length > 0)
+            {
+                string payloadPath = Path.Combine(folder, $"{baseName}.bin");
+                await File.WriteAllBytesAsync(payloadPath, document.Payload);
+                fileCount++;
+            }
+        }
+
+        Console.WriteLine($"Saved {fileCount} file(s) to {folder}");
+    }
+
+    static string BuildBusinessFunctionFileName(string objectName, string functionName)
+    {
+        string baseName = $"BUSFUNC_{objectName}_{functionName}";
+        return SanitizeFileName(TrimFileName(baseName, 120));
+    }
+
+    private sealed class ObjectLocationSelection
+    {
+        public static ObjectLocationSelection Local { get; } = new("Local", null);
+
+        private ObjectLocationSelection(string label, string? pathCode)
+        {
+            Label = label;
+            PathCode = string.IsNullOrWhiteSpace(pathCode) ? null : pathCode.Trim();
+        }
+
+        public string Label { get; }
+        public string? PathCode { get; }
+
+        public bool IsLocal => string.IsNullOrWhiteSpace(PathCode);
+        public string DisplayName => IsLocal ? "Local" : PathCode!;
+        public string CacheKey => IsLocal ? "LOCAL" : PathCode!;
+        public bool AllowFallback => IsLocal;
+        public string? ObjectLibrarianDataSourceOverride => IsLocal ? null : $"Object Librarian - {PathCode}";
+        public string? CentralObjectsDataSourceOverride => IsLocal ? null : $"Central Objects - {PathCode}";
+        public string? QueryDataSourceOverride => ObjectLibrarianDataSourceOverride;
+
+        public static ObjectLocationSelection FromPathCode(string? pathCode)
+        {
+            if (string.IsNullOrWhiteSpace(pathCode))
+            {
+                return Local;
+            }
+
+            string normalized = pathCode.Trim();
+            if (string.Equals(normalized, "local", StringComparison.OrdinalIgnoreCase))
+            {
+                return Local;
+            }
+
+            return new ObjectLocationSelection(normalized, normalized);
+        }
     }
 
 }
