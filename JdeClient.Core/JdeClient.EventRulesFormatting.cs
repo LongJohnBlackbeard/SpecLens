@@ -10,6 +10,19 @@ public partial class JdeClient
         JdeEventRulesNode node,
         CancellationToken cancellationToken = default)
     {
+        return await GetFormattedEventRulesAsync(
+            node,
+            useCentralLocation: false,
+            dataSourceOverride: null,
+            cancellationToken);
+    }
+
+    public async Task<JdeEventRulesFormattedResult> GetFormattedEventRulesAsync(
+        JdeEventRulesNode node,
+        bool useCentralLocation,
+        string? dataSourceOverride,
+        CancellationToken cancellationToken = default)
+    {
         if (node == null)
         {
             throw new ArgumentNullException(nameof(node));
@@ -38,10 +51,12 @@ public partial class JdeClient
             };
         }
 
-        var eventDocuments = await GetEventRulesXmlAsync(eventSpecKey, cancellationToken)
-            .ConfigureAwait(false);
-        var dataStructureDocuments = await GetDataStructureXmlAsync(templateName, cancellationToken)
-            .ConfigureAwait(false);
+        var eventDocuments = useCentralLocation
+            ? await GetEventRulesXmlAsync(eventSpecKey, useCentralLocation, dataSourceOverride, cancellationToken).ConfigureAwait(false)
+            : await GetEventRulesXmlAsync(eventSpecKey, cancellationToken).ConfigureAwait(false);
+        var dataStructureDocuments = useCentralLocation
+            ? await GetDataStructureXmlAsync(templateName, useCentralLocation, dataSourceOverride, cancellationToken).ConfigureAwait(false)
+            : await GetDataStructureXmlAsync(templateName, cancellationToken).ConfigureAwait(false);
 
         return FormatEventRules(eventDocuments, dataStructureDocuments, templateName, eventSpecKey, this);
     }

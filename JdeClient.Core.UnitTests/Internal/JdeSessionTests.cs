@@ -280,12 +280,18 @@ public class JdeSessionTests
             JdeObjectType? objectType = null,
             string? namePattern = null,
             string? descriptionPattern = null,
-            int maxResults = 0)
+            int maxResults = 0,
+            string? dataSourceOverride = null,
+            bool allowDataSourceFallback = true)
         {
             return [];
         }
 
-        public JdeObjectInfo? GetObjectByName(string objectName, JdeObjectType objectType)
+        public JdeObjectInfo? GetObjectByName(
+            string objectName,
+            JdeObjectType objectType,
+            string? dataSourceOverride = null,
+            bool allowDataSourceFallback = true)
         {
             return null;
         }

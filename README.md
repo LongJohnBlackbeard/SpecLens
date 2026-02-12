@@ -17,16 +17,17 @@ can be reported through the Issues tab.
 ## Features
 - Object catalog search (F9860)
 - Table and View Spec and Data browsing
-- Business function (NER only for now) event rules browsing
+- Business function event rules browsing (NER and C business function source/header)
+- Object/spec location selection (Local or path code/Object Librarian override)
 - Custom viewport grid components (prioritizing speed over UI)
 - Grid Sorting, Sequencing, and Column Freezing
 - Dark/Light theme support
 - Custom Syntax Highlighting for ER
+- Optional C source syntax highlighting toggle
 - OMW solution/project export to `.par` (`JdeClient.Core`)
 
 ## Future Features
-- All Object Event Rules Browsing
-- Specifying Object/Spec Location (Local, DV920, PY920, etc)
+- Deeper cross-object event-rules navigation
 - Run Business Functions
 - ER Search
 - DD Search

@@ -11,6 +11,7 @@ using System.Xml.Linq;
 using JdeClient.Core.Exceptions;
 using JdeClient.Core.Interop;
 using JdeClient.Core.Models;
+using JdeClient.Core.XmlEngine;
 using static JdeClient.Core.Interop.JdeStructures;
 using static JdeClient.Core.Interop.JdeKernelApi;
 
@@ -28,6 +29,15 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
     private const int ProductTypeRda = 2;
     private const int ProductTypeNer = 3;
     private const int ProductTypeTer = 4;
+    private const int SpecKeyBusFuncByObject = 2;
+    private const int SpecKeyDataStructureByTemplate = 1;
+    private const int MaxBusinessFunctionPayloadBytes = 32 * 1024 * 1024;
+    private const int MaxArchiveExtractionDepth = 3;
+    private const string CentralObjectsDataSourcePrefix = "Central Objects - ";
+    private static readonly byte[] ZipLocalFileHeaderSignature = { 0x50, 0x4B, 0x03, 0x04 };
+    private static readonly byte[] ZipCentralDirectoryHeaderSignature = { 0x50, 0x4B, 0x01, 0x02 };
+    private static readonly byte[] ZipEndOfCentralDirectorySignature = { 0x50, 0x4B, 0x05, 0x06 };
+    private readonly record struct BusinessFunctionSpecDetails(string FunctionName, string TemplateName, string EventSpecKey);
 
     /// <summary>
     /// Create a new query engine bound to a JDE user handle.
@@ -217,6 +227,17 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
     }
 
     /// <summary>
+    /// Retrieve event rules XML documents for a spec key at an explicit location.
+    /// </summary>
+    public IReadOnlyList<JdeEventRulesXmlDocument> GetEventRulesXmlDocuments(
+        string eventSpecKey,
+        JdeSpecLocation location,
+        string? dataSourceOverride)
+    {
+        return GetEventRulesXmlDocumentsForLocation(eventSpecKey, location, dataSourceOverride);
+    }
+
+    /// <summary>
     /// Retrieve data structure (DSTMPL) XML documents for a template name.
     /// </summary>
     public IReadOnlyList<JdeSpecXmlDocument> GetDataStructureXmlDocuments(string templateName)
@@ -246,6 +267,267 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
             });
         }
         return documents;
+    }
+
+    /// <summary>
+    /// Retrieve data structure XML documents for a template at an explicit location.
+    /// </summary>
+    public IReadOnlyList<JdeSpecXmlDocument> GetDataStructureXmlDocuments(
+        string templateName,
+        JdeSpecLocation location,
+        string? dataSourceOverride)
+    {
+        return GetDataStructureXmlDocumentsForLocation(templateName, location, dataSourceOverride);
+    }
+
+    private IReadOnlyList<JdeEventRulesXmlDocument> GetEventRulesXmlDocumentsForLocation(
+        string eventSpecKey,
+        JdeSpecLocation location,
+        string? dataSourceOverride)
+    {
+        if (string.IsNullOrWhiteSpace(eventSpecKey))
+        {
+            return Array.Empty<JdeEventRulesXmlDocument>();
+        }
+
+        var builders = LoadEventRulesXmlBuildersForLocation(eventSpecKey, location, dataSourceOverride);
+        if (builders.Count == 0)
+        {
+            return Array.Empty<JdeEventRulesXmlDocument>();
+        }
+
+        var documents = new List<JdeEventRulesXmlDocument>();
+        foreach (var builder in builders)
+        {
+            string xml = builder.BuildXml();
+            if (string.IsNullOrWhiteSpace(xml))
+            {
+                continue;
+            }
+
+            documents.Add(new JdeEventRulesXmlDocument
+            {
+                EventSpecKey = builder.EventSpecKey,
+                Xml = xml,
+                RecordCount = builder.RecordCount
+            });
+        }
+
+        return documents;
+    }
+
+    private IReadOnlyList<JdeSpecXmlDocument> GetDataStructureXmlDocumentsForLocation(
+        string templateName,
+        JdeSpecLocation location,
+        string? dataSourceOverride)
+    {
+        if (string.IsNullOrWhiteSpace(templateName))
+        {
+            return Array.Empty<JdeSpecXmlDocument>();
+        }
+
+        var builders = LoadDataStructureXmlBuildersForLocation(templateName, location, dataSourceOverride);
+        if (builders.Count == 0)
+        {
+            return Array.Empty<JdeSpecXmlDocument>();
+        }
+
+        var documents = new List<JdeSpecXmlDocument>();
+        foreach (var builder in builders)
+        {
+            string xml = builder.BuildXml();
+            if (string.IsNullOrWhiteSpace(xml))
+            {
+                continue;
+            }
+
+            documents.Add(new JdeSpecXmlDocument
+            {
+                SpecKey = builder.EventSpecKey,
+                Xml = xml,
+                RecordCount = builder.RecordCount
+            });
+        }
+
+        return documents;
+    }
+
+    /// <summary>
+    /// Retrieve C business function payload/documents from BUSFUNC specs.
+    /// </summary>
+    public IReadOnlyList<JdeBusinessFunctionCodeDocument> GetBusinessFunctionCodeDocuments(string objectName, string? functionName)
+    {
+        return GetBusinessFunctionCodeDocuments(
+            objectName,
+            functionName,
+            JdeBusinessFunctionCodeLocation.Auto,
+            dataSourceOverride: null);
+    }
+
+    /// <summary>
+    /// Retrieve C business function payload/documents from BUSFUNC specs.
+    /// </summary>
+    public IReadOnlyList<JdeBusinessFunctionCodeDocument> GetBusinessFunctionCodeDocuments(
+        string objectName,
+        string? functionName,
+        JdeBusinessFunctionCodeLocation location,
+        string? dataSourceOverride)
+    {
+        if (string.IsNullOrWhiteSpace(objectName))
+        {
+            return Array.Empty<JdeBusinessFunctionCodeDocument>();
+        }
+
+        string objectFilter = NormalizeText(objectName);
+        string? functionFilter = string.IsNullOrWhiteSpace(functionName) ? null : NormalizeText(functionName);
+        string? resolvedDataSource = NormalizeBusinessFunctionDataSourceOverride(dataSourceOverride);
+        TableLayout? layout = _options.UseRowLayoutTables
+            ? TableLayoutLoader.Load(F98762Structures.TableName)
+            : null;
+
+        LogSpecDebug($"[BUSFUNC] location={location}, dataSourceOverride='{resolvedDataSource ?? string.Empty}'");
+
+        var documents = LoadBusinessFunctionDocuments(
+            objectFilter,
+            functionFilter,
+            layout,
+            location,
+            resolvedDataSource);
+
+        return documents
+            .OrderBy(doc => doc.FunctionName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(doc => doc.SourceFileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private IReadOnlyList<JdeBusinessFunctionCodeDocument> LoadBusinessFunctionDocuments(
+        string objectName,
+        string? functionName,
+        TableLayout? layout,
+        JdeBusinessFunctionCodeLocation location,
+        string? dataSourceOverride)
+    {
+        if (location == JdeBusinessFunctionCodeLocation.Local)
+        {
+            return FetchBusinessFunctionDocumentsFromLocation(
+                objectName,
+                functionName,
+                layout,
+                JdeSpecLocation.LocalUser,
+                dataSourceOverride: null);
+        }
+
+        if (location == JdeBusinessFunctionCodeLocation.Central)
+        {
+            return FetchBusinessFunctionDocumentsFromLocation(
+                objectName,
+                functionName,
+                layout,
+                JdeSpecLocation.CentralObjects,
+                dataSourceOverride);
+        }
+
+        var localDocuments = FetchBusinessFunctionDocumentsFromLocation(
+            objectName,
+            functionName,
+            layout,
+            JdeSpecLocation.LocalUser,
+            dataSourceOverride: null);
+        if (localDocuments.Count > 0)
+        {
+            return localDocuments;
+        }
+
+        return FetchBusinessFunctionDocumentsFromLocation(
+            objectName,
+            functionName,
+            layout,
+            JdeSpecLocation.CentralObjects,
+            dataSourceOverride);
+    }
+
+    private IReadOnlyList<JdeBusinessFunctionCodeDocument> FetchBusinessFunctionDocumentsFromLocation(
+        string objectName,
+        string? functionName,
+        TableLayout? layout,
+        JdeSpecLocation location,
+        string? dataSourceOverride)
+    {
+        if (!TryOpenSpecHandleAtLocation(
+                JdeSpecFileType.BusFunc,
+                F98762Structures.TableName,
+                fallbackTableName: null,
+                location,
+                dataSourceOverride,
+                out IntPtr hSpec))
+        {
+            return Array.Empty<JdeBusinessFunctionCodeDocument>();
+        }
+
+        try
+        {
+            if (!TrySelectBusinessFunctionByObject(hSpec, objectName))
+            {
+                return Array.Empty<JdeBusinessFunctionCodeDocument>();
+            }
+
+            var functionDetails = LoadBusinessFunctionSpecDetails(objectName);
+            byte[] repositoryBlob = TryLoadBusinessFunctionRepositoryBlob(objectName, location, dataSourceOverride);
+            var workflowSourceCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            var documents = new List<JdeBusinessFunctionCodeDocument>();
+            while (true)
+            {
+                var specData = new JdeSpecData();
+                int fetchResult = JdeSpecEncapApi.jdeSpecFetch(hSpec, ref specData);
+                if (fetchResult != JDESPEC_SUCCESS)
+                {
+                    LogSpecDebug($"[BUSFUNC] {location} jdeSpecFetch end: {fetchResult}");
+                    break;
+                }
+
+                try
+                {
+                    var document = CreateBusinessFunctionCodeDocument(
+                        layout,
+                        objectName,
+                        ref specData,
+                        location,
+                        dataSourceOverride,
+                        functionDetails,
+                        repositoryBlob,
+                        workflowSourceCache);
+                    if (document == null)
+                    {
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(objectName) &&
+                        !string.Equals(document.ObjectName, objectName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(functionName) &&
+                        !string.Equals(document.FunctionName, functionName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    documents.Add(document);
+                }
+                finally
+                {
+                    JdeSpecEncapApi.jdeSpecFreeData(ref specData);
+                }
+            }
+
+            return documents;
+        }
+        finally
+        {
+            JdeSpecEncapApi.jdeSpecClose(hSpec);
+        }
     }
 
     private IReadOnlyList<XmlDocumentBuilder> LoadEventRulesXmlBuilders(string eventSpecKey)
@@ -423,6 +705,212 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
         return orderedBuilders;
     }
 
+    private IReadOnlyList<XmlDocumentBuilder> LoadEventRulesXmlBuildersForLocation(
+        string eventSpecKey,
+        JdeSpecLocation location,
+        string? dataSourceOverride)
+    {
+        if (!TryOpenSpecHandleAtLocation(
+                JdeSpecFileType.GbrSpec,
+                F98741Structures.TableName,
+                fallbackTableName: null,
+                location,
+                dataSourceOverride,
+                out IntPtr hSpec))
+        {
+            return Array.Empty<XmlDocumentBuilder>();
+        }
+
+        IntPtr hConvert = IntPtr.Zero;
+        var buildersByKey = new Dictionary<string, XmlDocumentBuilder>(StringComparer.OrdinalIgnoreCase);
+        var orderedBuilders = new List<XmlDocumentBuilder>();
+        try
+        {
+            int convertInit = JdeSpecEncapApi.jdeSpecInitXMLConvertHandle(out hConvert, JdeSpecFileType.GbrSpec);
+            if (convertInit != JDESPEC_SUCCESS || hConvert == IntPtr.Zero)
+            {
+                LogSpecDebug($"[ER] jdeSpecInitXMLConvertHandle failed: {convertInit}");
+                return Array.Empty<XmlDocumentBuilder>();
+            }
+
+            var key = new JdeSpecKeyGbrSpec
+            {
+                EventSpecKey = eventSpecKey,
+                Sequence = 0
+            };
+            int keySize = Marshal.SizeOf<JdeSpecKeyGbrSpec>();
+            IntPtr keyPtr = Marshal.AllocHGlobal(keySize);
+            try
+            {
+                Marshal.StructureToPtr(key, keyPtr, false);
+                int keyResult = JdeSpecEncapApi.jdeSpecSelectKeyed(hSpec, keyPtr, keySize, 1);
+                LogSpecDebug($"[ER] jdeSpecSelectKeyed result: {keyResult}, keySize={keySize}");
+                if (keyResult != JDESPEC_SUCCESS)
+                {
+                    return Array.Empty<XmlDocumentBuilder>();
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(keyPtr);
+            }
+
+            int recordIndex = 0;
+            while (true)
+            {
+                var specData = new JdeSpecData();
+                int fetchResult = JdeSpecEncapApi.jdeSpecFetch(hSpec, ref specData);
+                if (fetchResult != JDESPEC_SUCCESS)
+                {
+                    LogSpecDebug($"[ER] jdeSpecFetch end: {fetchResult}");
+                    break;
+                }
+
+                try
+                {
+                    string? xml = TryConvertSpecDataToXml(hConvert, ref specData);
+                    if (string.IsNullOrWhiteSpace(xml))
+                    {
+                        continue;
+                    }
+
+                    recordIndex++;
+                    AddXmlToBuilders(buildersByKey, orderedBuilders, xml, eventSpecKey);
+                }
+                finally
+                {
+                    JdeSpecEncapApi.jdeSpecFreeData(ref specData);
+                }
+            }
+
+            LogSpecDebug($"[ER] Fetched {recordIndex} GBRSPEC records.");
+        }
+        finally
+        {
+            if (hConvert != IntPtr.Zero)
+            {
+                JdeSpecEncapApi.jdeSpecClose(hConvert);
+            }
+
+            JdeSpecEncapApi.jdeSpecClose(hSpec);
+        }
+
+        return orderedBuilders;
+    }
+
+    private IReadOnlyList<XmlDocumentBuilder> LoadDataStructureXmlBuildersForLocation(
+        string templateName,
+        JdeSpecLocation location,
+        string? dataSourceOverride)
+    {
+        if (!TryOpenSpecHandleAtLocation(
+                JdeSpecFileType.Dstmpl,
+                F98743Structures.TableName,
+                F98741Structures.TableName,
+                location,
+                dataSourceOverride,
+                out IntPtr hSpec))
+        {
+            return Array.Empty<XmlDocumentBuilder>();
+        }
+
+        IntPtr hConvert = IntPtr.Zero;
+        var buildersByKey = new Dictionary<string, XmlDocumentBuilder>(StringComparer.OrdinalIgnoreCase);
+        var orderedBuilders = new List<XmlDocumentBuilder>();
+        try
+        {
+            int convertInit = JdeSpecEncapApi.jdeSpecInitXMLConvertHandle(out hConvert, JdeSpecFileType.Dstmpl);
+            if (convertInit != JDESPEC_SUCCESS || hConvert == IntPtr.Zero)
+            {
+                LogSpecDebug($"[DS] jdeSpecInitXMLConvertHandle failed: {convertInit}");
+                return Array.Empty<XmlDocumentBuilder>();
+            }
+
+            var key = new JdeSpecKeyDstmpl
+            {
+                TemplateName = new NID(templateName)
+            };
+            int keySize = Marshal.SizeOf<JdeSpecKeyDstmpl>();
+            IntPtr keyPtr = Marshal.AllocHGlobal(keySize);
+            try
+            {
+                Marshal.StructureToPtr(key, keyPtr, false);
+                var singleData = new JdeSpecData();
+                int singleResult = JdeSpecEncapApi.jdeSpecFetchSingle(hSpec, ref singleData, keyPtr, 1);
+                LogSpecDebug($"[DS] jdeSpecFetchSingle result: {singleResult}");
+                if (singleResult == JDESPEC_SUCCESS)
+                {
+                    try
+                    {
+                        string? xml = TryConvertSpecDataToXmlDirect(hConvert, ref singleData);
+                        if (!string.IsNullOrWhiteSpace(xml))
+                        {
+                            AddXmlToBuilders(buildersByKey, orderedBuilders, xml, templateName);
+                            LogSpecDebug("[DS] Fetched 1 DSTMPL record via fetch single.");
+                            return orderedBuilders;
+                        }
+                    }
+                    finally
+                    {
+                        JdeSpecEncapApi.jdeSpecFreeData(ref singleData);
+                    }
+                }
+
+                int keyResult = JdeSpecEncapApi.jdeSpecSelectKeyed(hSpec, keyPtr, keySize, 1);
+                LogSpecDebug($"[DS] jdeSpecSelectKeyed result: {keyResult}, keySize={keySize}");
+                if (keyResult != JDESPEC_SUCCESS)
+                {
+                    return Array.Empty<XmlDocumentBuilder>();
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(keyPtr);
+            }
+
+            int recordIndex = 0;
+            while (true)
+            {
+                var specData = new JdeSpecData();
+                int fetchResult = JdeSpecEncapApi.jdeSpecFetch(hSpec, ref specData);
+                if (fetchResult != JDESPEC_SUCCESS)
+                {
+                    LogSpecDebug($"[DS] jdeSpecFetch end: {fetchResult}");
+                    break;
+                }
+
+                try
+                {
+                    string? xml = TryConvertSpecDataToXmlDirect(hConvert, ref specData);
+                    if (string.IsNullOrWhiteSpace(xml))
+                    {
+                        continue;
+                    }
+
+                    recordIndex++;
+                    AddXmlToBuilders(buildersByKey, orderedBuilders, xml, templateName);
+                }
+                finally
+                {
+                    JdeSpecEncapApi.jdeSpecFreeData(ref specData);
+                }
+            }
+
+            LogSpecDebug($"[DS] Fetched {recordIndex} DSTMPL records.");
+        }
+        finally
+        {
+            if (hConvert != IntPtr.Zero)
+            {
+                JdeSpecEncapApi.jdeSpecClose(hConvert);
+            }
+
+            JdeSpecEncapApi.jdeSpecClose(hSpec);
+        }
+
+        return orderedBuilders;
+    }
+
     private bool TryOpenSpecHandle(JdeSpecFileType specType, string tableName, string? fallbackTableName, out IntPtr hSpec)
     {
         hSpec = IntPtr.Zero;
@@ -507,25 +995,1645 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
         return dataSource.Trim();
     }
 
-    private List<string?> BuildSpecDataSourceCandidates(string tableName, string? fallbackTableName)
+    private static string? NormalizeBusinessFunctionDataSourceOverride(string? dataSourceOverride)
+    {
+        if (string.IsNullOrWhiteSpace(dataSourceOverride))
+        {
+            return null;
+        }
+
+        string trimmed = dataSourceOverride.Trim();
+        if (trimmed.StartsWith(CentralObjectsDataSourcePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        return LooksLikePathCode(trimmed)
+            ? $"{CentralObjectsDataSourcePrefix}{trimmed}"
+            : trimmed;
+    }
+
+    private List<string?> BuildSpecDataSourceCandidates(
+        string tableName,
+        string? fallbackTableName,
+        string? preferredDataSource = null,
+        bool includeResolvedDefaults = true)
     {
         var candidates = new List<string?>();
-        string? primary = DataSourceResolver.ResolveTableDataSource(_hUser, tableName);
-        if (!string.IsNullOrWhiteSpace(primary))
+        if (!string.IsNullOrWhiteSpace(preferredDataSource))
         {
-            candidates.Add(primary);
+            candidates.Add(preferredDataSource);
         }
-        if (!string.IsNullOrWhiteSpace(fallbackTableName))
+
+        if (includeResolvedDefaults)
         {
-            string? fallback = DataSourceResolver.ResolveTableDataSource(_hUser, fallbackTableName);
-            if (!string.IsNullOrWhiteSpace(fallback) &&
-                !candidates.Any(candidate => string.Equals(candidate, fallback, StringComparison.OrdinalIgnoreCase)))
+            string? primary = DataSourceResolver.ResolveTableDataSource(_hUser, tableName);
+            if (!string.IsNullOrWhiteSpace(primary))
             {
-                candidates.Add(fallback);
+                AddIfMissing(candidates, primary);
+            }
+            if (!string.IsNullOrWhiteSpace(fallbackTableName))
+            {
+                string? fallback = DataSourceResolver.ResolveTableDataSource(_hUser, fallbackTableName);
+                if (!string.IsNullOrWhiteSpace(fallback))
+                {
+                    AddIfMissing(candidates, fallback);
+                }
             }
         }
-        candidates.Add(string.Empty);
+        if (includeResolvedDefaults)
+        {
+            AddIfMissing(candidates, string.Empty);
+        }
         return candidates;
+    }
+
+    private static void AddIfMissing(List<string?> candidates, string value)
+    {
+        if (candidates.Any(candidate => string.Equals(candidate, value, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        candidates.Add(value);
+    }
+
+    private bool TryOpenSpecHandleAtLocation(
+        JdeSpecFileType specType,
+        string tableName,
+        string? fallbackTableName,
+        JdeSpecLocation location,
+        string? preferredDataSource,
+        out IntPtr hSpec)
+    {
+        hSpec = IntPtr.Zero;
+        bool includeResolvedDefaults = string.IsNullOrWhiteSpace(preferredDataSource);
+        var candidates = BuildSpecDataSourceCandidates(
+            tableName,
+            fallbackTableName,
+            preferredDataSource,
+            includeResolvedDefaults);
+        foreach (string? dataSource in candidates)
+        {
+            string resolved = dataSource ?? string.Empty;
+            ID? indexId = specType switch
+            {
+                JdeSpecFileType.BusFunc => new ID(SpecKeyBusFuncByObject),
+                JdeSpecFileType.Dstmpl => new ID(SpecKeyDataStructureByTemplate),
+                _ => null
+            };
+
+            if (indexId.HasValue &&
+                TryOpenIndexedSpecHandle(specType, location, indexId.Value, resolved, out hSpec))
+            {
+                return true;
+            }
+
+            if (location == JdeSpecLocation.CentralObjects)
+            {
+                string? pathCode = TryExtractPathCode(resolved);
+                if (!string.IsNullOrWhiteSpace(pathCode) &&
+                    !string.Equals(pathCode, resolved, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (indexId.HasValue &&
+                        TryOpenIndexedSpecHandle(specType, location, indexId.Value, pathCode, out hSpec))
+                    {
+                        return true;
+                    }
+
+                    int pathCodeResult = JdeSpecEncapApi.jdeSpecOpen(
+                        out hSpec,
+                        _hUser,
+                        specType,
+                        location,
+                        pathCode);
+                    LogSpecDebug($"[SPEC] jdeSpecOpen {specType} {location} result={pathCodeResult}, ds='{pathCode}', handle=0x{hSpec.ToInt64():X}");
+                    if (pathCodeResult == JDESPEC_SUCCESS && hSpec != IntPtr.Zero)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            int result = JdeSpecEncapApi.jdeSpecOpen(out hSpec, _hUser, specType, location, resolved);
+            LogSpecDebug($"[SPEC] jdeSpecOpen {specType} {location} result={result}, ds='{resolved}', handle=0x{hSpec.ToInt64():X}");
+            if (result == JDESPEC_SUCCESS && hSpec != IntPtr.Zero)
+            {
+                return true;
+            }
+        }
+
+        if (location == JdeSpecLocation.LocalUser)
+        {
+            if (specType == JdeSpecFileType.BusFunc || specType == JdeSpecFileType.Dstmpl)
+            {
+                int localIndex = specType == JdeSpecFileType.BusFunc
+                    ? SpecKeyBusFuncByObject
+                    : SpecKeyDataStructureByTemplate;
+                int localIndexedResult = JdeSpecEncapApi.jdeSpecOpenLocalIndexed(
+                    out hSpec,
+                    _hUser,
+                    specType,
+                    new ID(localIndex));
+                LogSpecDebug(
+                    $"[SPEC] jdeSpecOpenLocalIndexed {specType} index={localIndex} result={localIndexedResult}, handle=0x{hSpec.ToInt64():X}");
+                if (localIndexedResult == JDESPEC_SUCCESS && hSpec != IntPtr.Zero)
+                {
+                    return true;
+                }
+            }
+
+            int localResult = JdeSpecEncapApi.jdeSpecOpenLocal(out hSpec, _hUser, specType);
+            LogSpecDebug($"[SPEC] jdeSpecOpenLocal {specType} result={localResult}, handle=0x{hSpec.ToInt64():X}");
+            return localResult == JDESPEC_SUCCESS && hSpec != IntPtr.Zero;
+        }
+
+        return false;
+    }
+
+    private bool TryOpenIndexedSpecHandle(
+        JdeSpecFileType specType,
+        JdeSpecLocation location,
+        ID indexId,
+        string locationSource,
+        out IntPtr hSpec)
+    {
+        hSpec = IntPtr.Zero;
+        int indexedResult = JdeSpecEncapApi.jdeSpecOpenIndexed(
+            out hSpec,
+            _hUser,
+            specType,
+            location,
+            indexId,
+            locationSource);
+        LogSpecDebug(
+            $"[SPEC] jdeSpecOpenIndexed {specType} {location} index={indexId.Value} result={indexedResult}, ds='{locationSource}', handle=0x{hSpec.ToInt64():X}");
+        return indexedResult == JDESPEC_SUCCESS && hSpec != IntPtr.Zero;
+    }
+
+    private bool TrySelectBusinessFunctionByObject(IntPtr hSpec, string objectName)
+    {
+        var key = new JdeSpecKeyBusFuncByObject
+        {
+            ObjectName = new NID(objectName)
+        };
+        return TrySelectSpecKey(hSpec, key, "[BUSFUNC] object");
+    }
+
+    private bool TrySelectSpecKey<T>(IntPtr hSpec, T key, string debugScope)
+        where T : struct
+    {
+        int keySize = Marshal.SizeOf<T>();
+        IntPtr keyPtr = Marshal.AllocHGlobal(keySize);
+        try
+        {
+            Marshal.StructureToPtr(key, keyPtr, false);
+            int keyResult = JdeSpecEncapApi.jdeSpecSelectKeyed(hSpec, keyPtr, keySize, 1);
+            LogSpecDebug($"{debugScope} jdeSpecSelectKeyed result: {keyResult}, keySize={keySize}");
+            return keyResult == JDESPEC_SUCCESS;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(keyPtr);
+        }
+    }
+
+    private JdeBusinessFunctionCodeDocument? CreateBusinessFunctionCodeDocument(
+        TableLayout? layout,
+        string objectName,
+        ref JdeSpecData specData,
+        JdeSpecLocation location,
+        string? dataSourceOverride,
+        IReadOnlyDictionary<string, BusinessFunctionSpecDetails> functionDetails,
+        byte[] repositoryBlob,
+        IDictionary<string, string> workflowSourceCache)
+    {
+        byte[] payload = ReadBusinessFunctionPayload(ref specData);
+        if (payload.Length == 0 && specData.RdbRecord == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        string objectValue = ReadSpecRecordString(layout, specData.RdbRecord, F98762Structures.Columns.ObjectName);
+        string functionName = ReadSpecRecordString(layout, specData.RdbRecord, F98762Structures.Columns.FunctionName);
+        string sourceFileName = ReadSpecRecordString(layout, specData.RdbRecord, F98762Structures.Columns.SourceFileName);
+        string version = ReadSpecRecordString(layout, specData.RdbRecord, F98762Structures.Columns.Version);
+
+        string resolvedObjectName = string.IsNullOrWhiteSpace(objectValue) ? objectName : objectValue;
+        string resolvedFunctionName = string.IsNullOrWhiteSpace(functionName) ? string.Empty : functionName;
+        if (string.IsNullOrWhiteSpace(resolvedFunctionName) &&
+            functionDetails.Count == 1)
+        {
+            resolvedFunctionName = functionDetails.Keys.FirstOrDefault() ?? string.Empty;
+        }
+        if (string.IsNullOrWhiteSpace(resolvedFunctionName))
+        {
+            resolvedFunctionName = InferBusinessFunctionNameFromPayload(payload, resolvedObjectName);
+        }
+
+        byte[] sourcePayload = payload;
+        string sourceCode = ExtractBusinessFunctionSourceCode(payload, resolvedFunctionName, resolvedObjectName);
+        string headerCode = ExtractBusinessFunctionHeaderCode(payload, resolvedObjectName);
+        if (repositoryBlob.Length > 0)
+        {
+            string repositorySource = ExtractBusinessFunctionSourceCode(repositoryBlob, resolvedFunctionName, resolvedObjectName);
+            string repositoryHeader = ExtractBusinessFunctionHeaderCode(repositoryBlob, resolvedObjectName);
+            if (!string.IsNullOrWhiteSpace(repositorySource) || !string.IsNullOrWhiteSpace(repositoryHeader))
+            {
+                sourcePayload = repositoryBlob;
+                if (!string.IsNullOrWhiteSpace(repositorySource))
+                {
+                    sourceCode = repositorySource;
+                }
+
+                if (!string.IsNullOrWhiteSpace(repositoryHeader))
+                {
+                    headerCode = repositoryHeader;
+                }
+
+                LogSpecDebug($"[BUSFUNC] Source resolved from F98780R OMRBLOB for {resolvedObjectName}.{resolvedFunctionName}");
+            }
+        }
+
+        if ((!LooksLikeCSource(sourceCode) || string.IsNullOrWhiteSpace(sourceCode)) &&
+            functionDetails.TryGetValue(resolvedFunctionName, out BusinessFunctionSpecDetails details))
+        {
+            string workflowSource = TryBuildBusinessFunctionWorkflowSource(
+                resolvedObjectName,
+                details,
+                location,
+                dataSourceOverride,
+                workflowSourceCache);
+            if (!string.IsNullOrWhiteSpace(workflowSource))
+            {
+                sourceCode = workflowSource;
+                LogSpecDebug($"[BUSFUNC] Source resolved from DSTMPL/GBRSPEC workflow for {resolvedObjectName}.{resolvedFunctionName}");
+            }
+        }
+
+        return new JdeBusinessFunctionCodeDocument
+        {
+            ObjectName = resolvedObjectName,
+            FunctionName = resolvedFunctionName,
+            SourceFileName = sourceFileName,
+            Version = version,
+            DataType = specData.DataType,
+            PayloadSize = sourcePayload.Length,
+            SourceCode = sourceCode,
+            HeaderCode = headerCode,
+            SourceLooksLikeCode = LooksLikeCSource(sourceCode),
+            Payload = sourcePayload
+        };
+    }
+
+    private IReadOnlyDictionary<string, BusinessFunctionSpecDetails> LoadBusinessFunctionSpecDetails(string objectName)
+    {
+        if (string.IsNullOrWhiteSpace(objectName))
+        {
+            return new Dictionary<string, BusinessFunctionSpecDetails>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var details = new Dictionary<string, BusinessFunctionSpecDetails>(StringComparer.OrdinalIgnoreCase);
+        HREQUEST hRequest = OpenTable(F9862Structures.TableName, new ID(F9862Structures.IdObjectNameFunctionName));
+        TableLayout? layout = _options.UseRowLayoutTables
+            ? TableLayoutLoader.Load(F9862Structures.TableName)
+            : null;
+        IntPtr rowBuffer = IntPtr.Zero;
+        try
+        {
+            var key = new F9862Structures.Key1
+            {
+                ObjectName = objectName,
+                FunctionName = string.Empty
+            };
+
+            int keySize = Marshal.SizeOf<F9862Structures.Key1>();
+            IntPtr keyPtr = Marshal.AllocHGlobal(keySize);
+            try
+            {
+                Marshal.StructureToPtr(key, keyPtr, false);
+                int keyResult = JDB_SelectKeyed(hRequest, new ID(F9862Structures.IdObjectNameFunctionName), keyPtr, 1);
+                if (keyResult != JDEDB_PASSED)
+                {
+                    return details;
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(keyPtr);
+            }
+
+            if (layout != null && layout.Size > 0)
+            {
+                rowBuffer = Marshal.AllocHGlobal(layout.Size + 64);
+            }
+
+            while (true)
+            {
+                int fetchResult = JDB_Fetch(hRequest, rowBuffer, 0);
+                if (fetchResult == JDEDB_NO_MORE_DATA)
+                {
+                    break;
+                }
+
+                if (fetchResult == JDEDB_SKIPPED)
+                {
+                    continue;
+                }
+
+                if (fetchResult != JDEDB_PASSED)
+                {
+                    continue;
+                }
+
+                string functionName = ReadColumnString(layout, rowBuffer, hRequest, F9862Structures.TableName, F9862Structures.Columns.FunctionName, 33);
+                if (string.IsNullOrWhiteSpace(functionName))
+                {
+                    continue;
+                }
+
+                string templateName = ReadColumnString(layout, rowBuffer, hRequest, F9862Structures.TableName, F9862Structures.Columns.DataStructureName, 11);
+                string eventSpecKey = ReadColumnString(layout, rowBuffer, hRequest, F9862Structures.TableName, F9862Structures.Columns.EventSpecKey, 37);
+
+                if (!details.ContainsKey(functionName))
+                {
+                    details[functionName] = new BusinessFunctionSpecDetails(functionName, templateName, eventSpecKey);
+                }
+            }
+        }
+        finally
+        {
+            JDB_CloseTable(hRequest);
+            if (rowBuffer != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(rowBuffer);
+            }
+        }
+
+        return details;
+    }
+
+    private byte[] TryLoadBusinessFunctionRepositoryBlob(
+        string objectName,
+        JdeSpecLocation location,
+        string? dataSourceOverride)
+    {
+        if (location != JdeSpecLocation.CentralObjects)
+        {
+            return Array.Empty<byte>();
+        }
+
+        string? repositoryDataSource = ResolveBusinessFunctionRepositoryDataSource(location, dataSourceOverride);
+        const bool allowFallbackToDefault = false;
+        if (!TryOpenTable(
+                F98780RStructures.TableName,
+                new ID(F98780RStructures.IdObjectReleaseVersion),
+                repositoryDataSource,
+                allowFallbackToDefault,
+                out HREQUEST hRequest))
+        {
+            return Array.Empty<byte>();
+        }
+
+        try
+        {
+            var key = new F98780RStructures.Key1
+            {
+                ObjectId = objectName,
+                Release = string.Empty,
+                Version = string.Empty
+            };
+
+            int keySize = Marshal.SizeOf<F98780RStructures.Key1>();
+            IntPtr keyPtr = Marshal.AllocHGlobal(keySize);
+            try
+            {
+                Marshal.StructureToPtr(key, keyPtr, false);
+                int keyResult = JDB_SelectKeyed(
+                    hRequest,
+                    new ID(F98780RStructures.IdObjectReleaseVersion),
+                    keyPtr,
+                    1);
+                if (keyResult != JDEDB_PASSED)
+                {
+                    LogSpecDebug($"[BUSFUNC] F98780R select failed for {objectName} (result={keyResult}).");
+                    return Array.Empty<byte>();
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(keyPtr);
+            }
+
+            while (true)
+            {
+                int fetchResult = JDB_Fetch(hRequest, IntPtr.Zero, 0);
+                if (fetchResult == JDEDB_NO_MORE_DATA)
+                {
+                    break;
+                }
+
+                if (fetchResult == JDEDB_SKIPPED)
+                {
+                    continue;
+                }
+
+                if (fetchResult != JDEDB_PASSED)
+                {
+                    break;
+                }
+
+                byte[] blob = ReadBlob(hRequest, F98780RStructures.TableName, F98780RStructures.Columns.ObjectRepositoryBlob);
+                if (blob.Length > 0)
+                {
+                    LogSpecDebug($"[BUSFUNC] F98780R OMRBLOB payload bytes={blob.Length} for {objectName}");
+                    return blob;
+                }
+            }
+        }
+        finally
+        {
+            JDB_CloseTable(hRequest);
+        }
+
+        LogSpecDebug($"[BUSFUNC] F98780R returned no OMRBLOB rows for {objectName}.");
+        return Array.Empty<byte>();
+    }
+
+    private string? ResolveBusinessFunctionRepositoryDataSource(JdeSpecLocation location, string? dataSourceOverride)
+    {
+        if (location != JdeSpecLocation.CentralObjects)
+        {
+            return null;
+        }
+
+        string? explicitDataSource = NormalizeCentralObjectsDataSource(dataSourceOverride);
+        if (!string.IsNullOrWhiteSpace(explicitDataSource))
+        {
+            return explicitDataSource;
+        }
+
+        string?[] candidates =
+        {
+            DataSourceResolver.ResolveTableDataSource(_hUser, F98780RStructures.TableName),
+            DataSourceResolver.ResolveTableDataSource(_hUser, F98762Structures.TableName),
+            DataSourceResolver.ResolveTableDataSource(_hUser, F98743Structures.TableName),
+            DataSourceResolver.ResolveTableDataSource(_hUser, F98741Structures.TableName),
+            DataSourceResolver.ResolveTableDataSource(_hUser, F98740Structures.TableName)
+        };
+
+        foreach (string? candidate in candidates)
+        {
+            string? normalized = NormalizeCentralObjectsDataSource(candidate);
+            if (!string.IsNullOrWhiteSpace(normalized))
+            {
+                return normalized;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeCentralObjectsDataSource(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        string trimmed = value.Trim();
+        if (trimmed.StartsWith(CentralObjectsDataSourcePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        string? pathCode = TryExtractCentralPathCode(trimmed);
+        if (!string.IsNullOrWhiteSpace(pathCode))
+        {
+            return $"{CentralObjectsDataSourcePrefix}{pathCode}";
+        }
+
+        return null;
+    }
+
+    private static string? TryExtractCentralPathCode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        string trimmed = value.Trim();
+        string? extracted = TryExtractPathCode(trimmed);
+        if (LooksLikePathCode(extracted))
+        {
+            return extracted;
+        }
+
+        return LooksLikePathCode(trimmed) ? trimmed : null;
+    }
+
+    private static bool LooksLikePathCode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        string token = value.Trim();
+        bool hasLetter = false;
+        bool hasDigit = false;
+        foreach (char ch in token)
+        {
+            if (char.IsLetter(ch))
+            {
+                hasLetter = true;
+                continue;
+            }
+
+            if (char.IsDigit(ch))
+            {
+                hasDigit = true;
+                continue;
+            }
+
+            return false;
+        }
+
+        return hasLetter && hasDigit && token.Length >= 4;
+    }
+
+    private bool TryOpenTable(
+        string tableName,
+        ID indexId,
+        string? dataSourceOverride,
+        bool allowFallbackToDefault,
+        out HREQUEST hRequest)
+    {
+        hRequest = new HREQUEST();
+        string? requested = string.IsNullOrWhiteSpace(dataSourceOverride)
+            ? null
+            : dataSourceOverride.Trim();
+        int result = JDB_OpenTable(_hUser, new NID(tableName), indexId, IntPtr.Zero, 0, requested, out hRequest);
+        if (result != JDEDB_PASSED || !hRequest.IsValid)
+        {
+            if (allowFallbackToDefault)
+            {
+                string? resolved = DataSourceResolver.ResolveTableDataSource(_hUser, tableName);
+                if (!string.IsNullOrWhiteSpace(resolved) &&
+                    !string.Equals(resolved, requested, StringComparison.OrdinalIgnoreCase))
+                {
+                    result = JDB_OpenTable(_hUser, new NID(tableName), indexId, IntPtr.Zero, 0, resolved, out hRequest);
+                }
+            }
+
+            if (allowFallbackToDefault &&
+                (result != JDEDB_PASSED || !hRequest.IsValid) &&
+                !string.IsNullOrWhiteSpace(requested))
+            {
+                result = JDB_OpenTable(_hUser, new NID(tableName), indexId, IntPtr.Zero, 0, null, out hRequest);
+            }
+        }
+
+        if (result != JDEDB_PASSED || !hRequest.IsValid)
+        {
+            LogSpecDebug($"[BUSFUNC] Failed to open {tableName} with ds='{requested ?? string.Empty}' (result={result})");
+            return false;
+        }
+
+        LogRequestDataSource(hRequest, tableName);
+        return true;
+    }
+
+    private string TryBuildBusinessFunctionWorkflowSource(
+        string objectName,
+        BusinessFunctionSpecDetails details,
+        JdeSpecLocation location,
+        string? dataSourceOverride,
+        IDictionary<string, string> workflowSourceCache)
+    {
+        if (string.IsNullOrWhiteSpace(details.FunctionName))
+        {
+            return string.Empty;
+        }
+
+        if (workflowSourceCache.TryGetValue(details.FunctionName, out string? cached))
+        {
+            return cached;
+        }
+
+        if (string.IsNullOrWhiteSpace(details.EventSpecKey) ||
+            string.IsNullOrWhiteSpace(details.TemplateName))
+        {
+            workflowSourceCache[details.FunctionName] = string.Empty;
+            return string.Empty;
+        }
+
+        var dsDocuments = GetDataStructureXmlDocumentsForLocation(details.TemplateName, location, dataSourceOverride);
+        string dataStructureXml = dsDocuments.FirstOrDefault(doc => !string.IsNullOrWhiteSpace(doc.Xml))?.Xml ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(dataStructureXml))
+        {
+            workflowSourceCache[details.FunctionName] = string.Empty;
+            return string.Empty;
+        }
+
+        var eventDocuments = GetEventRulesXmlDocumentsForLocation(details.EventSpecKey, location, dataSourceOverride);
+        if (eventDocuments.Count == 0)
+        {
+            workflowSourceCache[details.FunctionName] = string.Empty;
+            return string.Empty;
+        }
+
+        var combined = new List<string>();
+        foreach (var eventDocument in eventDocuments)
+        {
+            if (string.IsNullOrWhiteSpace(eventDocument.Xml))
+            {
+                continue;
+            }
+
+            try
+            {
+                var engine = new JdeXmlEngine(eventDocument.Xml, dataStructureXml);
+                engine.ConvertXmlToReadableEr();
+                if (!string.IsNullOrWhiteSpace(engine.ReadableEventRule))
+                {
+                    combined.Add(engine.ReadableEventRule.TrimEnd());
+                }
+            }
+            catch (Exception ex)
+            {
+                LogSpecDebug($"[BUSFUNC] Workflow format failed for {objectName}.{details.FunctionName}: {ex.Message}");
+            }
+        }
+
+        string source = combined.Count == 0
+            ? string.Empty
+            : string.Join(Environment.NewLine + Environment.NewLine, combined);
+        workflowSourceCache[details.FunctionName] = source;
+        return source;
+    }
+
+    private static string InferBusinessFunctionNameFromPayload(byte[] payload, string objectName)
+    {
+        if (payload.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        string text = NormalizeExtractedText(DecodePayloadAsUnicode(payload));
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        string normalizedObject = NormalizeText(objectName);
+        foreach (string token in ExtractAlphanumericTokens(text))
+        {
+            if (string.Equals(token, normalizedObject, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (LooksLikeObjectIdentifier(token))
+            {
+                continue;
+            }
+
+            bool hasLetter = token.Any(char.IsLetter);
+            bool hasLower = token.Any(char.IsLower);
+            if (!hasLetter || !hasLower)
+            {
+                continue;
+            }
+
+            return token;
+        }
+
+        return string.Empty;
+    }
+
+    private static IEnumerable<string> ExtractAlphanumericTokens(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            yield break;
+        }
+
+        var builder = new StringBuilder();
+        foreach (char ch in text)
+        {
+            bool isTokenChar = char.IsLetterOrDigit(ch) || ch == '_';
+            if (isTokenChar)
+            {
+                builder.Append(ch);
+                continue;
+            }
+
+            if (builder.Length >= 4)
+            {
+                yield return builder.ToString();
+            }
+
+            builder.Clear();
+        }
+
+        if (builder.Length >= 4)
+        {
+            yield return builder.ToString();
+        }
+    }
+
+    private static bool LooksLikeObjectIdentifier(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token) || token.Length < 2)
+        {
+            return false;
+        }
+
+        if (token[0] != 'B' && token[0] != 'D')
+        {
+            return false;
+        }
+
+        for (int i = 1; i < token.Length; i++)
+        {
+            if (!char.IsDigit(token[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private byte[] ReadBusinessFunctionPayload(ref JdeSpecData specData)
+    {
+        if (specData.SpecData == IntPtr.Zero || specData.DataLen == 0)
+        {
+            return Array.Empty<byte>();
+        }
+
+        int requestedLength = specData.DataLen > int.MaxValue ? int.MaxValue : (int)specData.DataLen;
+        if (requestedLength <= 0)
+        {
+            return Array.Empty<byte>();
+        }
+
+        int copyLength = Math.Min(requestedLength, MaxBusinessFunctionPayloadBytes);
+        var payload = new byte[copyLength];
+        Marshal.Copy(specData.SpecData, payload, 0, copyLength);
+        if (copyLength < requestedLength)
+        {
+            LogSpecDebug($"[BUSFUNC] Payload truncated from {requestedLength} to {copyLength} bytes.");
+        }
+        return payload;
+    }
+
+    private static string ReadSpecRecordString(TableLayout? layout, IntPtr rdbRecord, string columnName)
+    {
+        if (layout == null || rdbRecord == IntPtr.Zero)
+        {
+            return string.Empty;
+        }
+
+        var value = layout.ReadValueByColumn(rdbRecord, columnName).Value;
+        return NormalizeText(value switch
+        {
+            null => string.Empty,
+            string text => text,
+            _ => value.ToString() ?? string.Empty
+        });
+    }
+
+    private static string ExtractBusinessFunctionSourceCode(byte[] payload, string functionName, string objectName)
+    {
+        if (payload.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        if (TryExtractSourceFromArchivePayload(payload, objectName, out string archiveSource))
+        {
+            return archiveSource;
+        }
+
+        var candidates = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        AddDecodedCandidate(candidates, seen, DecodePayloadAsUnicode(payload));
+        AddDecodedCandidate(candidates, seen, DecodePayloadAsUtf8(payload));
+        AddDecodedCandidate(candidates, seen, DecodePayloadAsAscii(payload));
+
+        if (TryUncompress(payload, out byte[] uncompressed) &&
+            uncompressed.Length > 0 &&
+            !payload.SequenceEqual(uncompressed))
+        {
+            AddDecodedCandidate(candidates, seen, DecodePayloadAsUnicode(uncompressed));
+            AddDecodedCandidate(candidates, seen, DecodePayloadAsUtf8(uncompressed));
+            AddDecodedCandidate(candidates, seen, DecodePayloadAsAscii(uncompressed));
+        }
+
+        string best = string.Empty;
+        int bestScore = int.MinValue;
+        foreach (string candidate in candidates)
+        {
+            string segment = ExtractLikelyCodeSegment(candidate);
+            int score = ScoreCodeCandidate(segment, functionName);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = segment;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(best) && candidates.Count > 0)
+        {
+            return candidates[0];
+        }
+
+        return best;
+    }
+
+    private static string ExtractBusinessFunctionHeaderCode(byte[] payload, string objectName)
+    {
+        if (payload.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        return TryExtractHeaderFromArchivePayload(payload, objectName, out string headerCode)
+            ? headerCode
+            : string.Empty;
+    }
+
+    private static bool TryExtractSourceFromArchivePayload(byte[] payload, string objectName, out string sourceCode)
+    {
+        sourceCode = string.Empty;
+        if (payload.Length < 64 || string.IsNullOrWhiteSpace(objectName))
+        {
+            return false;
+        }
+
+        string normalizedObject = NormalizeText(objectName);
+        if (string.IsNullOrWhiteSpace(normalizedObject))
+        {
+            return false;
+        }
+
+        if (TryExtractSourceFromZipPayload(payload, normalizedObject, 0, out sourceCode))
+        {
+            return true;
+        }
+
+        string[] entryCandidates =
+        {
+            $"source64/{normalizedObject}.c",
+            $"source/{normalizedObject}.c",
+            $"source64\\{normalizedObject}.c",
+            $"source\\{normalizedObject}.c"
+        };
+
+        foreach (string entryName in entryCandidates)
+        {
+            if (!TryExtractArchiveEntry(payload, entryName, out byte[] entryBytes))
+            {
+                continue;
+            }
+
+            string text = NormalizeExtractedText(DecodePayloadAsUtf8(entryBytes));
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                text = NormalizeExtractedText(DecodePayloadAsAscii(entryBytes));
+            }
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
+            sourceCode = text;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryExtractSourceFromZipPayload(byte[] payload, string objectName, int depth, out string sourceCode)
+    {
+        sourceCode = string.Empty;
+        if (depth > MaxArchiveExtractionDepth || payload.Length < 4)
+        {
+            return false;
+        }
+
+        using (var directStream = new MemoryStream(payload, writable: false))
+        {
+            if (TryExtractSourceFromZipStream(directStream, objectName, depth, out sourceCode))
+            {
+                return true;
+            }
+        }
+
+        int searchOffset = 0;
+        while (searchOffset >= 0 && searchOffset < payload.Length)
+        {
+            int zipOffset = IndexOfSequence(payload, ZipLocalFileHeaderSignature, searchOffset);
+            if (zipOffset < 0)
+            {
+                break;
+            }
+
+            searchOffset = zipOffset + 1;
+            if (zipOffset <= 0)
+            {
+                continue;
+            }
+
+            using var slicedStream = new MemoryStream(payload, zipOffset, payload.Length - zipOffset, writable: false);
+            if (TryExtractSourceFromZipStream(slicedStream, objectName, depth, out sourceCode))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryExtractSourceFromZipStream(Stream stream, string objectName, int depth, out string sourceCode)
+    {
+        sourceCode = string.Empty;
+        try
+        {
+            using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
+            if (archive.Entries.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (ZipArchiveEntry entry in archive.Entries)
+            {
+                string normalizedEntryName = NormalizeArchiveEntryName(entry.FullName);
+                if (string.IsNullOrWhiteSpace(normalizedEntryName))
+                {
+                    continue;
+                }
+
+                if (IsBusinessFunctionSourceEntry(normalizedEntryName, objectName, ".c"))
+                {
+                    if (TryReadArchiveEntryText(entry, out string sourceText) && !string.IsNullOrWhiteSpace(sourceText))
+                    {
+                        sourceCode = sourceText;
+                        return true;
+                    }
+                }
+
+                if (depth >= MaxArchiveExtractionDepth ||
+                    !normalizedEntryName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!TryReadArchiveEntryBytes(entry, out byte[] nestedPayload) || nestedPayload.Length == 0)
+                {
+                    continue;
+                }
+
+                if (TryExtractSourceFromZipPayload(nestedPayload, objectName, depth + 1, out string nestedSource) &&
+                    !string.IsNullOrWhiteSpace(nestedSource))
+                {
+                    sourceCode = nestedSource;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryExtractHeaderFromArchivePayload(byte[] payload, string objectName, out string headerCode)
+    {
+        headerCode = string.Empty;
+        if (payload.Length < 64 || string.IsNullOrWhiteSpace(objectName))
+        {
+            return false;
+        }
+
+        string normalizedObject = NormalizeText(objectName);
+        if (string.IsNullOrWhiteSpace(normalizedObject))
+        {
+            return false;
+        }
+
+        if (TryExtractHeaderFromZipPayload(payload, normalizedObject, 0, out headerCode))
+        {
+            return true;
+        }
+
+        string[] entryCandidates =
+        {
+            $"include64/{normalizedObject}.h",
+            $"include/{normalizedObject}.h",
+            $"include64\\{normalizedObject}.h",
+            $"include\\{normalizedObject}.h"
+        };
+
+        foreach (string entryName in entryCandidates)
+        {
+            if (!TryExtractArchiveEntry(payload, entryName, out byte[] entryBytes))
+            {
+                continue;
+            }
+
+            string text = NormalizeExtractedText(DecodePayloadAsUtf8(entryBytes));
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                text = NormalizeExtractedText(DecodePayloadAsAscii(entryBytes));
+            }
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
+            headerCode = text;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryExtractHeaderFromZipPayload(byte[] payload, string objectName, int depth, out string headerCode)
+    {
+        headerCode = string.Empty;
+        if (depth > MaxArchiveExtractionDepth || payload.Length < 4)
+        {
+            return false;
+        }
+
+        using (var directStream = new MemoryStream(payload, writable: false))
+        {
+            if (TryExtractHeaderFromZipStream(directStream, objectName, depth, out headerCode))
+            {
+                return true;
+            }
+        }
+
+        int searchOffset = 0;
+        while (searchOffset >= 0 && searchOffset < payload.Length)
+        {
+            int zipOffset = IndexOfSequence(payload, ZipLocalFileHeaderSignature, searchOffset);
+            if (zipOffset < 0)
+            {
+                break;
+            }
+
+            searchOffset = zipOffset + 1;
+            if (zipOffset <= 0)
+            {
+                continue;
+            }
+
+            using var slicedStream = new MemoryStream(payload, zipOffset, payload.Length - zipOffset, writable: false);
+            if (TryExtractHeaderFromZipStream(slicedStream, objectName, depth, out headerCode))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryExtractHeaderFromZipStream(Stream stream, string objectName, int depth, out string headerCode)
+    {
+        headerCode = string.Empty;
+        try
+        {
+            using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
+            if (archive.Entries.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (ZipArchiveEntry entry in archive.Entries)
+            {
+                string normalizedEntryName = NormalizeArchiveEntryName(entry.FullName);
+                if (string.IsNullOrWhiteSpace(normalizedEntryName))
+                {
+                    continue;
+                }
+
+                if (IsBusinessFunctionSourceEntry(normalizedEntryName, objectName, ".h"))
+                {
+                    if (TryReadArchiveEntryText(entry, out string headerText) && !string.IsNullOrWhiteSpace(headerText))
+                    {
+                        headerCode = headerText;
+                        return true;
+                    }
+                }
+
+                if (depth >= MaxArchiveExtractionDepth ||
+                    !normalizedEntryName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!TryReadArchiveEntryBytes(entry, out byte[] nestedPayload) || nestedPayload.Length == 0)
+                {
+                    continue;
+                }
+
+                if (TryExtractHeaderFromZipPayload(nestedPayload, objectName, depth + 1, out string nestedHeader) &&
+                    !string.IsNullOrWhiteSpace(nestedHeader))
+                {
+                    headerCode = nestedHeader;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryReadArchiveEntryBytes(ZipArchiveEntry entry, out byte[] entryBytes)
+    {
+        entryBytes = Array.Empty<byte>();
+        try
+        {
+            using Stream entryStream = entry.Open();
+            long expectedLength = entry.Length > 0 && entry.Length < 64 * 1024 * 1024 ? entry.Length : 0;
+            using var output = expectedLength > 0
+                ? new MemoryStream((int)expectedLength)
+                : new MemoryStream();
+            entryStream.CopyTo(output);
+            entryBytes = output.ToArray();
+            return entryBytes.Length > 0;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryReadArchiveEntryText(ZipArchiveEntry entry, out string text)
+    {
+        text = string.Empty;
+        if (!TryReadArchiveEntryBytes(entry, out byte[] entryBytes))
+        {
+            return false;
+        }
+
+        text = NormalizeExtractedText(DecodePayloadAsUtf8(entryBytes));
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            return true;
+        }
+
+        text = NormalizeExtractedText(DecodePayloadAsAscii(entryBytes));
+        return !string.IsNullOrWhiteSpace(text);
+    }
+
+    private static bool IsBusinessFunctionSourceEntry(string normalizedEntryName, string objectName, string extension)
+    {
+        string fileName = $"{objectName}{extension}";
+        string[] prefixes = { "source64/", "source/", "include64/", "include/" };
+        foreach (string prefix in prefixes)
+        {
+            string target = prefix + fileName;
+            if (normalizedEntryName.Equals(target, StringComparison.OrdinalIgnoreCase) ||
+                normalizedEntryName.EndsWith("/" + target, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NormalizeArchiveEntryName(string entryName)
+    {
+        if (string.IsNullOrWhiteSpace(entryName))
+        {
+            return string.Empty;
+        }
+
+        return entryName.Replace('\\', '/').TrimStart('/');
+    }
+
+    private static bool TryExtractArchiveEntry(byte[] payload, string entryName, out byte[] entryBytes)
+    {
+        entryBytes = Array.Empty<byte>();
+        byte[] nameBytes = Encoding.ASCII.GetBytes(entryName);
+        int searchOffset = 0;
+        while (searchOffset >= 0 && searchOffset < payload.Length)
+        {
+            int nameOffset = IndexOfSequenceAsciiIgnoreCase(payload, nameBytes, searchOffset);
+            if (nameOffset < 0)
+            {
+                break;
+            }
+
+            searchOffset = nameOffset + 1;
+            int headerOffset = nameOffset - 30;
+            if (headerOffset < 0 || headerOffset + 30 > payload.Length)
+            {
+                continue;
+            }
+
+            if (ReadUInt32LittleEndian(payload, headerOffset) != 0x04034B50)
+            {
+                continue;
+            }
+
+            int fileNameLength = ReadUInt16LittleEndian(payload, headerOffset + 26);
+            int extraLength = ReadUInt16LittleEndian(payload, headerOffset + 28);
+            if (fileNameLength <= 0)
+            {
+                continue;
+            }
+
+            int compressionMethod = ReadUInt16LittleEndian(payload, headerOffset + 8);
+            int generalPurposeBitFlags = ReadUInt16LittleEndian(payload, headerOffset + 6);
+            int compressedSize = unchecked((int)ReadUInt32LittleEndian(payload, headerOffset + 18));
+            int uncompressedSize = unchecked((int)ReadUInt32LittleEndian(payload, headerOffset + 22));
+            int dataOffset = nameOffset + fileNameLength + extraLength;
+            if (dataOffset < 0 || dataOffset > payload.Length)
+            {
+                continue;
+            }
+
+            if (compressedSize <= 0 ||
+                dataOffset + compressedSize > payload.Length ||
+                (generalPurposeBitFlags & 0x0008) != 0)
+            {
+                int nextOffset = FindNextZipStructureOffset(payload, dataOffset + 1);
+                compressedSize = Math.Max(0, nextOffset - dataOffset);
+            }
+
+            if (compressedSize <= 0 || dataOffset + compressedSize > payload.Length)
+            {
+                continue;
+            }
+
+            byte[] compressedData = new byte[compressedSize];
+            Buffer.BlockCopy(payload, dataOffset, compressedData, 0, compressedSize);
+
+            if (compressionMethod == 0)
+            {
+                entryBytes = compressedData;
+                return true;
+            }
+
+            if (compressionMethod == 8 &&
+                TryInflateDeflate(compressedData, uncompressedSize, out byte[] inflated) &&
+                inflated.Length > 0)
+            {
+                entryBytes = inflated;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static int FindNextZipStructureOffset(byte[] payload, int startOffset)
+    {
+        int nextOffset = payload.Length;
+        int localOffset = IndexOfSequence(payload, ZipLocalFileHeaderSignature, startOffset);
+        if (localOffset >= 0 && localOffset < nextOffset)
+        {
+            nextOffset = localOffset;
+        }
+
+        int centralOffset = IndexOfSequence(payload, ZipCentralDirectoryHeaderSignature, startOffset);
+        if (centralOffset >= 0 && centralOffset < nextOffset)
+        {
+            nextOffset = centralOffset;
+        }
+
+        int endOffset = IndexOfSequence(payload, ZipEndOfCentralDirectorySignature, startOffset);
+        if (endOffset >= 0 && endOffset < nextOffset)
+        {
+            nextOffset = endOffset;
+        }
+
+        return nextOffset;
+    }
+
+    private static bool TryInflateDeflate(byte[] compressedData, int uncompressedSizeHint, out byte[] inflated)
+    {
+        inflated = Array.Empty<byte>();
+        try
+        {
+            using var input = new MemoryStream(compressedData, writable: false);
+            using var deflate = new DeflateStream(input, CompressionMode.Decompress, leaveOpen: false);
+            int bufferSize = uncompressedSizeHint > 0 && uncompressedSizeHint < 64 * 1024 * 1024
+                ? uncompressedSizeHint
+                : Math.Min(compressedData.Length * 4, 64 * 1024 * 1024);
+            if (bufferSize <= 0)
+            {
+                bufferSize = 4096;
+            }
+
+            using var output = new MemoryStream(bufferSize);
+            deflate.CopyTo(output);
+            inflated = output.ToArray();
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    private static int IndexOfSequence(byte[] buffer, byte[] pattern, int startIndex)
+    {
+        if (pattern.Length == 0 || buffer.Length == 0 || startIndex >= buffer.Length)
+        {
+            return -1;
+        }
+
+        int lastStart = buffer.Length - pattern.Length;
+        for (int i = Math.Max(0, startIndex); i <= lastStart; i++)
+        {
+            bool matched = true;
+            for (int j = 0; j < pattern.Length; j++)
+            {
+                if (buffer[i + j] == pattern[j])
+                {
+                    continue;
+                }
+
+                matched = false;
+                break;
+            }
+
+            if (matched)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static int IndexOfSequenceAsciiIgnoreCase(byte[] buffer, byte[] pattern, int startIndex)
+    {
+        if (pattern.Length == 0 || buffer.Length == 0 || startIndex >= buffer.Length)
+        {
+            return -1;
+        }
+
+        int lastStart = buffer.Length - pattern.Length;
+        for (int i = Math.Max(0, startIndex); i <= lastStart; i++)
+        {
+            bool matched = true;
+            for (int j = 0; j < pattern.Length; j++)
+            {
+                byte left = buffer[i + j];
+                byte right = pattern[j];
+                if (left == right)
+                {
+                    continue;
+                }
+
+                byte leftLower = left is >= (byte)'A' and <= (byte)'Z'
+                    ? (byte)(left + 32)
+                    : left;
+                byte rightLower = right is >= (byte)'A' and <= (byte)'Z'
+                    ? (byte)(right + 32)
+                    : right;
+                if (leftLower == rightLower)
+                {
+                    continue;
+                }
+
+                matched = false;
+                break;
+            }
+
+            if (matched)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static ushort ReadUInt16LittleEndian(byte[] data, int offset)
+    {
+        if (offset < 0 || offset + 2 > data.Length)
+        {
+            return 0;
+        }
+
+        return (ushort)(data[offset] | (data[offset + 1] << 8));
+    }
+
+    private static uint ReadUInt32LittleEndian(byte[] data, int offset)
+    {
+        if (offset < 0 || offset + 4 > data.Length)
+        {
+            return 0;
+        }
+
+        return (uint)(
+            data[offset] |
+            (data[offset + 1] << 8) |
+            (data[offset + 2] << 16) |
+            (data[offset + 3] << 24));
+    }
+
+    private static void AddDecodedCandidate(List<string> candidates, HashSet<string> seen, string candidate)
+    {
+        string normalized = NormalizeExtractedText(candidate);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return;
+        }
+
+        if (seen.Add(normalized))
+        {
+            candidates.Add(normalized);
+        }
+    }
+
+    private static string DecodePayloadAsUnicode(byte[] payload)
+    {
+        return payload.Length == 0 ? string.Empty : Encoding.Unicode.GetString(payload);
+    }
+
+    private static string DecodePayloadAsUtf8(byte[] payload)
+    {
+        return payload.Length == 0 ? string.Empty : Encoding.UTF8.GetString(payload);
+    }
+
+    private static string DecodePayloadAsAscii(byte[] payload)
+    {
+        return payload.Length == 0 ? string.Empty : Encoding.ASCII.GetString(payload);
+    }
+
+    private static string NormalizeExtractedText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(text.Length);
+        foreach (char ch in text)
+        {
+            if (ch == '\0')
+            {
+                continue;
+            }
+
+            if (ch == '\r' || ch == '\n' || ch == '\t' || !char.IsControl(ch))
+            {
+                builder.Append(ch);
+            }
+        }
+
+        return builder.ToString().Trim();
+    }
+
+    private static string ExtractLikelyCodeSegment(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        string[] markers =
+        {
+            "#include",
+            "JDEBFRTN",
+            "JDEBFWINAPI",
+            "static ",
+            "void ",
+            "int ",
+            "BOOL ",
+            "ID ",
+            "/*"
+        };
+
+        int start = -1;
+        foreach (string marker in markers)
+        {
+            int index = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+            {
+                continue;
+            }
+
+            if (start < 0 || index < start)
+            {
+                start = index;
+            }
+        }
+
+        return start <= 0 ? text.Trim() : text.Substring(start).Trim();
+    }
+
+    private static int ScoreCodeCandidate(string text, string functionName)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return int.MinValue;
+        }
+
+        int score = 0;
+        if (text.Contains("#include", StringComparison.Ordinal))
+        {
+            score += 12;
+        }
+
+        if (text.Contains("JDEBFWINAPI", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("JDEBFRTN", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 10;
+        }
+
+        if (!string.IsNullOrWhiteSpace(functionName) &&
+            text.Contains(functionName, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 8;
+        }
+
+        if (text.Contains("{", StringComparison.Ordinal) && text.Contains("}", StringComparison.Ordinal))
+        {
+            score += 6;
+        }
+
+        if (text.Contains(";", StringComparison.Ordinal))
+        {
+            score += 4;
+        }
+
+        int newlineCount = text.Count(ch => ch == '\n');
+        score += Math.Min(newlineCount, 20);
+
+        int printableChars = text.Count(ch => ch == '\r' || ch == '\n' || ch == '\t' || !char.IsControl(ch));
+        int printablePercent = text.Length == 0 ? 0 : (printableChars * 100) / text.Length;
+        score += printablePercent / 10;
+        if (printablePercent < 60)
+        {
+            score -= 12;
+        }
+
+        return score;
+    }
+
+    private static bool LooksLikeCSource(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        if (text.Contains("#include", StringComparison.Ordinal) ||
+            text.Contains("JDEBFWINAPI", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("JDEBFRTN", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!(text.Contains("{", StringComparison.Ordinal) &&
+              text.Contains("}", StringComparison.Ordinal) &&
+              text.Contains(";", StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        int keywordHits = 0;
+        if (text.Contains("static ", StringComparison.Ordinal)) keywordHits++;
+        if (text.Contains(" void ", StringComparison.Ordinal) || text.StartsWith("void ", StringComparison.Ordinal)) keywordHits++;
+        if (text.Contains(" int ", StringComparison.Ordinal) || text.StartsWith("int ", StringComparison.Ordinal)) keywordHits++;
+        if (text.Contains(" char ", StringComparison.Ordinal) || text.StartsWith("char ", StringComparison.Ordinal)) keywordHits++;
+        if (text.Contains(" BOOL ", StringComparison.Ordinal)) keywordHits++;
+
+        return keywordHits >= 2;
     }
 
     private string? TryConvertSpecDataToXml(IntPtr hConvert, ref JdeSpecData specData)

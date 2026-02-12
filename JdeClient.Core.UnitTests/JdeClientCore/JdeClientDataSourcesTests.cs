@@ -80,4 +80,55 @@ public class JdeClientDataSourcesTests
         await Assert.That(result[1].Name).IsEqualTo("PathA");
         await Assert.That(result[0].DatabasePath).IsEqualTo("PathB");
     }
+
+    [Test]
+    public async Task GetAvailablePathCodesAsync_MapsDistinctTrimmedSortedPathCodes()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        TestHelpers.SetupExecuteAsync<List<string>>(session);
+
+        var tableEngine = Substitute.For<IJdeTableQueryEngine>();
+        var tableFactory = Substitute.For<IJdeTableQueryEngineFactory>();
+        tableFactory.Create(Arg.Any<JdeClientOptions>()).Returns(tableEngine);
+
+        var queryResult = new JdeQueryResult { TableName = "F00942" };
+        queryResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["EMPATHCD"] = " PY920 "
+        });
+        queryResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["PATHCD"] = "DV920"
+        });
+        queryResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["PATHCODE"] = "py920"
+        });
+        queryResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["PATHCODE"] = " "
+        });
+
+        tableEngine.QueryTable(
+                "F00942",
+                0,
+                Arg.Is<IReadOnlyList<JdeFilter>>(filters => filters.Count == 0),
+                "JPY920",
+                null)
+            .Returns(queryResult);
+
+        var client = new JdeClient(
+            session,
+            new JdeClientOptions(),
+            tableQueryEngineFactory: tableFactory);
+
+        // Act
+        var result = await client.GetAvailablePathCodesAsync("JPY920");
+
+        // Assert
+        await Assert.That(result.Count).IsEqualTo(2);
+        await Assert.That(result[0]).IsEqualTo("DV920");
+        await Assert.That(result[1]).IsEqualTo("PY920");
+    }
 }

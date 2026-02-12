@@ -1,6 +1,6 @@
 using System;
-using System.Reactive.Linq;
 using System.Windows.Input;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.VisualTree;
@@ -14,6 +14,7 @@ namespace SpecLens.Avalonia.Views;
 
 public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 {
+    private const int MaximizedBottomInsetPixels = 1;
     private SettingsWindow? _settingsWindow;
 
     public MainWindow()
@@ -21,7 +22,17 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         InitializeComponent();
         this.WhenActivated(_ => { });
         ConfigureResizeCursors();
+        PropertyChanged += OnMainWindowPropertyChanged;
+        UpdateResizeOverlayState();
         Loaded += OnMainWindowLoaded;
+    }
+
+    private void OnMainWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == WindowStateProperty)
+        {
+            OnWindowStateChanged();
+        }
     }
 
     private void OnSearchBoxKeyDown(object? sender, KeyEventArgs e)
@@ -237,13 +248,16 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
     private void OnTitleBarDoubleTapped(object? sender, TappedEventArgs e)
     {
-        WindowState = WindowState == WindowState.Maximized
-            ? WindowState.Normal
-            : WindowState.Maximized;
+        ToggleMaximize();
     }
 
     private void OnResizePointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        if (WindowState == WindowState.Maximized)
+        {
+            return;
+        }
+
         var point = e.GetCurrentPoint(this);
         if (!point.Properties.IsLeftButtonPressed)
         {
@@ -265,11 +279,70 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
     private void OnMaximizeClick(object? sender, RoutedEventArgs e)
     {
-        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        ToggleMaximize();
     }
 
     private void OnCloseWindowClick(object? sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private void UpdateResizeOverlayState()
+    {
+        if (this.FindControl<Grid>("ResizeOverlay") is not { } overlay)
+        {
+            return;
+        }
+
+        bool enableOverlay = WindowState != WindowState.Maximized;
+        overlay.IsVisible = enableOverlay;
+        overlay.IsHitTestVisible = enableOverlay;
+    }
+
+    private void OnWindowStateChanged()
+    {
+        UpdateResizeOverlayState();
+        UpdateMaximizedBoundsConstraint();
+    }
+
+    private void ToggleMaximize()
+    {
+        if (WindowState == WindowState.Maximized)
+        {
+            WindowState = WindowState.Normal;
+            return;
+        }
+
+        ApplyCurrentScreenMaximizeConstraint();
+        WindowState = WindowState.Maximized;
+    }
+
+    private void UpdateMaximizedBoundsConstraint()
+    {
+        if (WindowState == WindowState.Maximized)
+        {
+            ApplyCurrentScreenMaximizeConstraint();
+            return;
+        }
+
+        MaxWidth = double.PositiveInfinity;
+        MaxHeight = double.PositiveInfinity;
+    }
+
+    private void ApplyCurrentScreenMaximizeConstraint()
+    {
+        var screen = Screens?.ScreenFromWindow(this);
+        if (screen == null || screen.Scaling <= 0)
+        {
+            return;
+        }
+
+        double maxWidthDip = screen.WorkingArea.Width / screen.Scaling;
+        double maxHeightDip = Math.Max(
+            1,
+            (screen.WorkingArea.Height - MaximizedBottomInsetPixels) / screen.Scaling);
+
+        MaxWidth = maxWidthDip;
+        MaxHeight = maxHeightDip;
     }
 }

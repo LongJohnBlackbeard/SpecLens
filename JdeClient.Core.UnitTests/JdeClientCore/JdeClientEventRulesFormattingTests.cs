@@ -75,6 +75,59 @@ public class JdeClientEventRulesFormattingTests
     }
 
     [Test]
+    public async Task GetFormattedEventRulesAsync_CentralLocation_UsesExplicitSpecLocationLookups()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeEventRulesXmlDocument>>(session);
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeSpecXmlDocument>>(session);
+
+        var eventEngine = Substitute.For<IEventRulesQueryEngine>();
+        var eventFactory = Substitute.For<IEventRulesQueryEngineFactory>();
+        eventFactory.Create(Arg.Any<HUSER>(), Arg.Any<JdeClientOptions>()).Returns(eventEngine);
+
+        eventEngine.GetEventRulesXmlDocuments(
+                "EV1",
+                JdeSpecLocation.CentralObjects,
+                "Central Objects - PY920")
+            .Returns(new List<JdeEventRulesXmlDocument>
+            {
+                new() { EventSpecKey = "EV1", Xml = "<GBREvent szEventSpecKey=\"EV1\" xmlns=\"http://jde\" />", RecordCount = 1 }
+            });
+        eventEngine.GetDataStructureXmlDocuments(
+                "D1234",
+                JdeSpecLocation.CentralObjects,
+                "Central Objects - PY920")
+            .Returns(new List<JdeSpecXmlDocument>
+            {
+                new() { SpecKey = "D1234", Xml = "<root szTmplName=\"D1234\" xmlns=\"http://jde\"><Template /></root>", RecordCount = 1 }
+            });
+
+        var client = new JdeClient(session, new JdeClientOptions(), eventRulesQueryEngineFactory: eventFactory);
+        var node = new JdeEventRulesNode
+        {
+            Name = "B1234",
+            EventSpecKey = "EV1"
+        };
+
+        // Act
+        _ = await client.GetFormattedEventRulesAsync(
+            node,
+            useCentralLocation: true,
+            dataSourceOverride: "Central Objects - PY920");
+
+        // Assert
+        eventEngine.Received(1).GetEventRulesXmlDocuments(
+            "EV1",
+            JdeSpecLocation.CentralObjects,
+            "Central Objects - PY920");
+        eventEngine.Received(1).GetDataStructureXmlDocuments(
+            "D1234",
+            JdeSpecLocation.CentralObjects,
+            "Central Objects - PY920");
+    }
+
+    [Test]
     public async Task GetFormattedEventRulesAsync_EventXmlMissing_ReturnsMessage()
     {
         // Arrange

@@ -83,7 +83,7 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
-                            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto, Auto"
+                            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
                                   ColumnSpacing="12" RowSpacing="10">
                                 <TextBlock Grid.Row="0" Text="Comments" Width="110" VerticalAlignment="Center" />
                                 <ColorPicker Grid.Row="0" Grid.Column="1"
@@ -124,6 +124,10 @@
                                 <ColorPicker Grid.Row="4" Grid.Column="1"
                                              Width="180"
                                              Color="{Binding EventRulesStringColor, Mode=TwoWay}" />
+                                <CheckBox Grid.Row="5"
+                                          Grid.ColumnSpan="4"
+                                          Content="Enable C code syntax highlighting"
+                                          IsChecked="{Binding EnableCCodeSyntaxHighlighting, Mode=TwoWay}" />
                             </Grid>
                         </Border>
                     </StackPanel>

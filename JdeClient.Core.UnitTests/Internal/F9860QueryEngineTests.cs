@@ -196,6 +196,27 @@ public class F9860QueryEngineTests
     }
 
     [Test]
+    public async Task ShouldForceSystemTableFallback_NullOrWhitespace_ReturnsFalse()
+    {
+        await Assert.That(F9860QueryEngine.ShouldForceSystemTableFallback(null)).IsFalse();
+        await Assert.That(F9860QueryEngine.ShouldForceSystemTableFallback("   ")).IsFalse();
+    }
+
+    [Test]
+    public async Task ShouldForceSystemTableFallback_ObjectLibrarianPrefix_ReturnsTrue()
+    {
+        await Assert.That(F9860QueryEngine.ShouldForceSystemTableFallback("Object Librarian - PY920")).IsTrue();
+        await Assert.That(F9860QueryEngine.ShouldForceSystemTableFallback("object librarian - dv920")).IsTrue();
+    }
+
+    [Test]
+    public async Task ShouldForceSystemTableFallback_OtherDataSource_ReturnsFalse()
+    {
+        await Assert.That(F9860QueryEngine.ShouldForceSystemTableFallback("Central Objects - PY920")).IsFalse();
+        await Assert.That(F9860QueryEngine.ShouldForceSystemTableFallback("JDEPY")).IsFalse();
+    }
+
+    [Test]
     public async Task ShouldFilterByObjectType_RespectsAllAndUnknown()
     {
         await Assert.That(F9860QueryEngine.ShouldFilterByObjectType(null)).IsFalse();

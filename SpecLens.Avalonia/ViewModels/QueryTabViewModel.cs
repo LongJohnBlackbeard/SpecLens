@@ -28,6 +28,8 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
     private readonly IAppSettingsService _settingsService;
     private readonly IDataDictionaryInfoService _dataDictionaryInfoService;
     private readonly bool _isBusinessView;
+    private readonly string? _objectLibrarianDataSourceOverride;
+    private readonly bool _allowObjectLibrarianFallback;
     private readonly ObservableCollection<ColumnFilter> _filters = new();
     private readonly ObservableCollection<JdeDataSourceInfo> _dataSources = new();
     private readonly ObservableCollection<JdeIndexInfo> _indexes = new();
@@ -70,14 +72,20 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
         IJdeConnectionService connectionService,
         IAppSettingsService settingsService,
         IDataDictionaryInfoService dataDictionaryInfoService,
-        bool isBusinessView = false)
-        : base($"Query: {tableName}", $"query_{tableName}_{Guid.NewGuid():N}")
+        bool isBusinessView = false,
+        string? objectLibrarianDataSourceOverride = null,
+        string? locationLabel = null)
+        : base(
+            $"Query: {tableName}",
+            $"query_{tableName}_{(string.IsNullOrWhiteSpace(locationLabel) ? "local" : locationLabel)}_{Guid.NewGuid():N}")
     {
         TableName = tableName;
         _connectionService = connectionService;
         _settingsService = settingsService;
         _dataDictionaryInfoService = dataDictionaryInfoService;
         _isBusinessView = isBusinessView;
+        _objectLibrarianDataSourceOverride = objectLibrarianDataSourceOverride;
+        _allowObjectLibrarianFallback = string.IsNullOrWhiteSpace(objectLibrarianDataSourceOverride);
         QueryColumnWidth = _settingsService.Current.QueryColumnWidth > 0 ? _settingsService.Current.QueryColumnWidth : DefaultColumnWidth;
         Filters = new ReadOnlyObservableCollection<ColumnFilter>(_filters);
         DataSources = new ReadOnlyObservableCollection<JdeDataSourceInfo>(_dataSources);
@@ -276,12 +284,24 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
 
                 if (_isBusinessView)
                 {
-                    viewInfo = await client.GetBusinessViewInfoAsync(TableName, cancellationToken);
+                    viewInfo = await client.GetBusinessViewInfoAsync(
+                        TableName,
+                        _objectLibrarianDataSourceOverride,
+                        _allowObjectLibrarianFallback,
+                        cancellationToken);
                 }
                 else
                 {
-                    tableInfo = await client.GetTableInfoAsync(TableName, cancellationToken);
-                    indexes = await client.GetTableIndexesAsync(TableName, cancellationToken);
+                    tableInfo = await client.GetTableInfoAsync(
+                        TableName,
+                        _objectLibrarianDataSourceOverride,
+                        _allowObjectLibrarianFallback,
+                        cancellationToken);
+                    indexes = await client.GetTableIndexesAsync(
+                        TableName,
+                        _objectLibrarianDataSourceOverride,
+                        _allowObjectLibrarianFallback,
+                        cancellationToken);
                 }
 
                 return (tableInfo, viewInfo, dataSources, defaultDataSource, indexes);
@@ -344,6 +364,8 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
             }
 
             SelectedDataSource = _dataSources
+                .FirstOrDefault(ds => string.Equals(ds.Name, _objectLibrarianDataSourceOverride, StringComparison.OrdinalIgnoreCase))
+                ?? _dataSources
                 .FirstOrDefault(ds => string.Equals(ds.Name, defaultDataSource, StringComparison.OrdinalIgnoreCase))
                 ?? _dataSources.FirstOrDefault();
 

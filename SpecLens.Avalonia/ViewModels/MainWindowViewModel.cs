@@ -51,6 +51,8 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
     private readonly IAppSettingsService _settingsService;
     private readonly IDataDictionaryInfoService _dataDictionaryInfoService;
     private readonly ObservableCollection<JdeObjectInfo> _objectResults = new();
+    private readonly ObservableCollection<ObjectLocationOption> _objectLocationOptions = new();
+    private readonly ReadOnlyObservableCollection<ObjectLocationOption> _readOnlyObjectLocationOptions;
     private string _title = "Spec Lens";
     private string _statusMessage = "Not connected";
     private bool _isConnected;
@@ -61,6 +63,8 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
     private string _descriptionSearchText = string.Empty;
     private JdeObjectType _selectedObjectType;
     private ObjectTypeOption? _selectedObjectTypeOption;
+    private ObjectLocationOption? _selectedObjectLocationOption;
+    private ObjectLocationOption _lastSearchLocation = ObjectLocationOption.Local;
     private JdeObjectInfo? _selectedObject;
     private bool _isSearching;
 
@@ -73,7 +77,9 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         _settingsService = settingsService;
         _dataDictionaryInfoService = dataDictionaryInfoService;
         ObjectResults = new ReadOnlyObservableCollection<JdeObjectInfo>(_objectResults);
+        _readOnlyObjectLocationOptions = new ReadOnlyObservableCollection<ObjectLocationOption>(_objectLocationOptions);
         ObjectTypeOptions = BuildObjectTypeOptions();
+        ApplyObjectLocationOptions(Array.Empty<string>(), _settingsService.Current.ObjectSearchPathCode);
 
         SearchText = _settingsService.Current.SearchText;
         DescriptionSearchText = _settingsService.Current.DescriptionSearchText;
@@ -82,6 +88,7 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         IsConnecting = _connectionService.IsConnecting;
         SelectedObjectTypeOption = ObjectTypeOptions.FirstOrDefault(option => option.Value == SelectedObjectType)
             ?? ObjectTypeOptions.FirstOrDefault();
+        SelectedObjectLocationOption = ResolveLocationOption(_settingsService.Current.ObjectSearchPathCode);
         StatusMessage = _connectionService.StatusMessage;
 
         var canConnect = this.WhenAnyValue(
@@ -214,6 +221,7 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
 
     public ReadOnlyObservableCollection<JdeObjectInfo> ObjectResults { get; }
     public IReadOnlyList<ObjectTypeOption> ObjectTypeOptions { get; }
+    public ReadOnlyObservableCollection<ObjectLocationOption> ObjectLocationOptions => _readOnlyObjectLocationOptions;
 
     public string SearchText
     {
@@ -285,6 +293,25 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         }
     }
 
+    public ObjectLocationOption? SelectedObjectLocationOption
+    {
+        get => _selectedObjectLocationOption;
+        set
+        {
+            if (MatchesLocation(_selectedObjectLocationOption, value))
+            {
+                return;
+            }
+
+            this.RaiseAndSetIfChanged(ref _selectedObjectLocationOption, value);
+            string pathCode = value?.PathCode ?? string.Empty;
+            if (!string.Equals(_settingsService.Current.ObjectSearchPathCode, pathCode, StringComparison.OrdinalIgnoreCase))
+            {
+                _settingsService.Update(settings => settings.ObjectSearchPathCode = pathCode);
+            }
+        }
+    }
+
     public JdeObjectInfo? SelectedObject
     {
         get => _selectedObject;
@@ -330,6 +357,7 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         try
         {
             await _connectionService.ConnectAsync().ConfigureAwait(false);
+            await LoadObjectLocationOptionsAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -454,22 +482,28 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         {
             string namePattern = SearchText.Trim();
             string descriptionPattern = DescriptionSearchText.Trim();
+            var location = SelectedObjectLocationOption ?? ObjectLocationOption.Local;
+            string? dataSourceOverride = location.ObjectLibrarianDataSourceOverride;
+            bool allowDataSourceFallback = location.IsLocal;
             var results = await _connectionService.RunExclusiveAsync(
                 client => client.GetObjectsAsync(
                     SelectedObjectType,
                     searchPattern: namePattern,
                     descriptionPattern: descriptionPattern,
-                    maxResults: 50000));
+                    maxResults: 50000,
+                    dataSourceOverride: dataSourceOverride,
+                    allowDataSourceFallback: allowDataSourceFallback));
 
             await RunOnUiThreadAsync(() =>
             {
+                _lastSearchLocation = location;
                 _objectResults.Clear();
                 foreach (var item in results)
                 {
                     _objectResults.Add(item);
                 }
 
-                StatusMessage = $"Found {results.Count} objects";
+                StatusMessage = $"Found {results.Count} objects in {location.DisplayName}";
             });
         }
         catch (JdeConnectionException ex)
@@ -490,20 +524,25 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
 
     private Task OpenSpecsAsync()
     {
-        return OpenSpecsForObjectAsync(SelectedObject);
+        return OpenSpecsForObjectAsync(SelectedObject, ResolveLocationOption(SelectedObject));
     }
 
     private Task OpenQueryAsync()
     {
-        return OpenQueryForObjectAsync(SelectedObject);
+        return OpenQueryForObjectAsync(SelectedObject, ResolveLocationOption(SelectedObject));
     }
 
     private Task OpenEventRulesAsync()
     {
-        return OpenEventRulesForObjectAsync(SelectedObject);
+        return OpenEventRulesForObjectAsync(SelectedObject, ResolveLocationOption(SelectedObject), initialFunctionName: null);
     }
 
     private Task OpenSpecsForObjectAsync(JdeObjectInfo? jdeObject)
+    {
+        return OpenSpecsForObjectAsync(jdeObject, ResolveLocationOption(jdeObject));
+    }
+
+    private Task OpenSpecsForObjectAsync(JdeObjectInfo? jdeObject, ObjectLocationOption locationOption)
     {
         if (jdeObject == null || !IsActionAllowed(jdeObject, ObjectAction.Specs))
         {
@@ -512,10 +551,23 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
 
         return RunOnUiThreadAsync(() =>
         {
-            var tab = new SpecsTabViewModel(jdeObject, _connectionService, _dataDictionaryInfoService)
+            string locationLabel = locationOption.DisplayName;
+            string tabId = BuildSpecsTabId(jdeObject.ObjectName, locationOption);
+            if (TrySelectExistingTab(tabId))
             {
-                Header = $"{jdeObject.ObjectName} - Specs"
+                return;
+            }
+
+            var tab = new SpecsTabViewModel(
+                jdeObject,
+                _connectionService,
+                _dataDictionaryInfoService,
+                locationOption.ObjectLibrarianDataSourceOverride,
+                locationLabel)
+            {
+                Header = $"{jdeObject.ObjectName} [{locationLabel}] - Specs"
             };
+            tab.TabId = tabId;
 
             Tabs.Add(tab);
             SelectedTab = tab;
@@ -523,24 +575,35 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         });
     }
 
-    public async Task OpenSpecsForObjectNameAsync(string objectName)
+    public Task OpenSpecsForObjectNameAsync(string objectName)
+    {
+        return OpenSpecsForObjectNameAsync(objectName, pathCode: null);
+    }
+
+    public async Task OpenSpecsForObjectNameAsync(string objectName, string? pathCode)
     {
         if (string.IsNullOrWhiteSpace(objectName))
         {
             return;
         }
 
-        var resolved = await ResolveSpecObjectAsync(objectName);
+        var location = ResolveLocationOption(pathCode);
+        var resolved = await ResolveSpecObjectAsync(objectName, location);
         if (resolved == null)
         {
             StatusMessage = $"Object '{objectName}' was not found in the catalog.";
             return;
         }
 
-        await OpenSpecsForObjectAsync(resolved);
+        await OpenSpecsForObjectAsync(resolved, location);
     }
 
     private Task OpenQueryForObjectAsync(JdeObjectInfo? jdeObject)
+    {
+        return OpenQueryForObjectAsync(jdeObject, ResolveLocationOption(jdeObject));
+    }
+
+    private Task OpenQueryForObjectAsync(JdeObjectInfo? jdeObject, ObjectLocationOption locationOption)
     {
         if (jdeObject == null || !IsActionAllowed(jdeObject, ObjectAction.Query))
         {
@@ -550,10 +613,25 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         return RunOnUiThreadAsync(() =>
         {
             bool isBusinessView = string.Equals(jdeObject.ObjectType?.Trim(), "BSVW", StringComparison.OrdinalIgnoreCase);
-            var tab = new QueryTabViewModel(jdeObject.ObjectName, _connectionService, _settingsService, _dataDictionaryInfoService, isBusinessView)
+            string locationLabel = locationOption.DisplayName;
+            string tabId = BuildQueryTabId(jdeObject.ObjectName, locationOption, isBusinessView);
+            if (TrySelectExistingTab(tabId))
             {
-                Header = $"{jdeObject.ObjectName} - Query"
+                return;
+            }
+
+            var tab = new QueryTabViewModel(
+                jdeObject.ObjectName,
+                _connectionService,
+                _settingsService,
+                _dataDictionaryInfoService,
+                isBusinessView,
+                locationOption.ObjectLibrarianDataSourceOverride,
+                locationLabel)
+            {
+                Header = $"{jdeObject.ObjectName} [{locationLabel}] - Query"
             };
+            tab.TabId = tabId;
 
             Tabs.Add(tab);
             SelectedTab = tab;
@@ -563,11 +641,12 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
 
     private Task OpenEventRulesForObjectAsync(JdeObjectInfo? jdeObject)
     {
-        return OpenEventRulesForObjectAsync(jdeObject, initialFunctionName: null);
+        return OpenEventRulesForObjectAsync(jdeObject, ResolveLocationOption(jdeObject), initialFunctionName: null);
     }
 
     private Task OpenEventRulesForObjectAsync(
         JdeObjectInfo? jdeObject,
+        ObjectLocationOption locationOption,
         string? initialFunctionName)
     {
         if (jdeObject == null || !IsActionAllowed(jdeObject, ObjectAction.EventRules))
@@ -577,10 +656,22 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
 
         return RunOnUiThreadAsync(() =>
         {
-            var tab = new EventRulesTabViewModel(jdeObject, _connectionService, initialFunctionName)
+            string locationLabel = locationOption.DisplayName;
+            string tabId = BuildEventRulesTabId(jdeObject.ObjectName, locationOption);
+            if (string.IsNullOrWhiteSpace(initialFunctionName) && TrySelectExistingTab(tabId))
             {
-                Header = $"{jdeObject.ObjectName} - Event Rules"
+                return;
+            }
+
+            var tab = new EventRulesTabViewModel(
+                jdeObject,
+                _connectionService,
+                locationOption,
+                initialFunctionName)
+            {
+                Header = $"{jdeObject.ObjectName} [{locationLabel}] - Event Rules"
             };
+            tab.TabId = tabId;
 
             Tabs.Add(tab);
             SelectedTab = tab;
@@ -589,6 +680,11 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
     }
 
     public Task OpenEventRulesForFunctionAsync(string objectName, string functionName)
+    {
+        return OpenEventRulesForFunctionAsync(objectName, functionName, pathCode: null);
+    }
+
+    public Task OpenEventRulesForFunctionAsync(string objectName, string functionName, string? pathCode)
     {
         if (string.IsNullOrWhiteSpace(objectName))
         {
@@ -601,7 +697,7 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
             ObjectType = "BSFN"
         };
 
-        return OpenEventRulesForObjectAsync(jdeObject, functionName);
+        return OpenEventRulesForObjectAsync(jdeObject, ResolveLocationOption(pathCode), functionName);
     }
 
     private Task OpenDefaultAsync(JdeObjectInfo? jdeObject)
@@ -669,7 +765,7 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         return false;
     }
 
-    private async Task<JdeObjectInfo?> ResolveSpecObjectAsync(string objectName)
+    private async Task<JdeObjectInfo?> ResolveSpecObjectAsync(string objectName, ObjectLocationOption? locationOption = null)
     {
         if (!IsConnected)
         {
@@ -678,11 +774,19 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         }
 
         string trimmed = objectName.Trim();
+        var location = locationOption ?? ResolveLocationOption((string?)null);
+        string? dataSourceOverride = location.ObjectLibrarianDataSourceOverride;
+        bool allowDataSourceFallback = location.IsLocal;
         try
         {
             return await _connectionService.RunExclusiveAsync(async client =>
             {
-                var viewMatches = await client.GetObjectsAsync(JdeObjectType.BusinessView, trimmed, maxResults: 1);
+                var viewMatches = await client.GetObjectsAsync(
+                    JdeObjectType.BusinessView,
+                    trimmed,
+                    maxResults: 1,
+                    dataSourceOverride: dataSourceOverride,
+                    allowDataSourceFallback: allowDataSourceFallback);
                 var view = viewMatches.FirstOrDefault(match =>
                     string.Equals(match.ObjectName, trimmed, StringComparison.OrdinalIgnoreCase));
                 if (view != null)
@@ -690,7 +794,12 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
                     return view;
                 }
 
-                var tableMatches = await client.GetObjectsAsync(JdeObjectType.Table, trimmed, maxResults: 1);
+                var tableMatches = await client.GetObjectsAsync(
+                    JdeObjectType.Table,
+                    trimmed,
+                    maxResults: 1,
+                    dataSourceOverride: dataSourceOverride,
+                    allowDataSourceFallback: allowDataSourceFallback);
                 return tableMatches.FirstOrDefault(match =>
                     string.Equals(match.ObjectName, trimmed, StringComparison.OrdinalIgnoreCase));
             });
@@ -707,6 +816,156 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
         }
 
         return null;
+    }
+
+    private async Task LoadObjectLocationOptionsAsync()
+    {
+        if (!IsConnected)
+        {
+            return;
+        }
+
+        try
+        {
+            var pathCodes = await _connectionService.RunExclusiveAsync(
+                client => client.GetAvailablePathCodesAsync());
+
+            await RunOnUiThreadAsync(() =>
+            {
+                ApplyObjectLocationOptions(pathCodes, _settingsService.Current.ObjectSearchPathCode);
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to load object search pathcodes");
+        }
+    }
+
+    private void ApplyObjectLocationOptions(IEnumerable<string>? pathCodes, string? selectedPathCode)
+    {
+        var options = new List<ObjectLocationOption> { ObjectLocationOption.Local };
+        if (pathCodes != null)
+        {
+            foreach (var pathCode in pathCodes
+                         .Where(code => !string.IsNullOrWhiteSpace(code))
+                         .Select(code => code.Trim())
+                         .Distinct(StringComparer.OrdinalIgnoreCase)
+                         .OrderBy(code => code, StringComparer.OrdinalIgnoreCase))
+            {
+                options.Add(new ObjectLocationOption(pathCode, pathCode));
+            }
+        }
+
+        _objectLocationOptions.Clear();
+        foreach (var option in options)
+        {
+            _objectLocationOptions.Add(option);
+        }
+
+        ObjectLocationOption resolved;
+        if (string.IsNullOrWhiteSpace(selectedPathCode))
+        {
+            resolved = _objectLocationOptions.FirstOrDefault(option => option.IsLocal) ?? ObjectLocationOption.Local;
+        }
+        else
+        {
+            resolved = _objectLocationOptions.FirstOrDefault(option => option.MatchesPathCode(selectedPathCode))
+                       ?? ObjectLocationOption.FromPathCode(selectedPathCode);
+        }
+
+        if (!_objectLocationOptions.Any(option => option.MatchesPathCode(resolved.PathCode)))
+        {
+            _objectLocationOptions.Add(resolved);
+        }
+
+        SelectedObjectLocationOption = _objectLocationOptions.FirstOrDefault(option => option.MatchesPathCode(resolved.PathCode))
+                                       ?? resolved;
+    }
+
+    private static bool MatchesLocation(ObjectLocationOption? left, ObjectLocationOption? right)
+    {
+        string leftCode = left?.PathCode ?? string.Empty;
+        string rightCode = right?.PathCode ?? string.Empty;
+        return string.Equals(leftCode, rightCode, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private ObjectLocationOption ResolveLocationOption(JdeObjectInfo? jdeObject)
+    {
+        if (jdeObject != null && _objectResults.Contains(jdeObject))
+        {
+            return _lastSearchLocation;
+        }
+
+        return SelectedObjectLocationOption ?? ObjectLocationOption.Local;
+    }
+
+    private ObjectLocationOption ResolveLocationOption(string? pathCode)
+    {
+        if (string.IsNullOrWhiteSpace(pathCode))
+        {
+            return SelectedObjectLocationOption
+                   ?? _objectLocationOptions.FirstOrDefault(option => option.IsLocal)
+                   ?? ObjectLocationOption.Local;
+        }
+
+        var existing = _objectLocationOptions.FirstOrDefault(option => option.MatchesPathCode(pathCode));
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        return ObjectLocationOption.FromPathCode(pathCode);
+    }
+
+    private bool TrySelectExistingTab(string tabId)
+    {
+        if (string.IsNullOrWhiteSpace(tabId))
+        {
+            return false;
+        }
+
+        var existing = Tabs.FirstOrDefault(tab =>
+            string.Equals(tab.TabId, tabId, StringComparison.OrdinalIgnoreCase));
+        if (existing == null)
+        {
+            return false;
+        }
+
+        SelectedTab = existing;
+        return true;
+    }
+
+    private static string BuildSpecsTabId(string objectName, ObjectLocationOption locationOption)
+    {
+        return $"specs:{NormalizeTabObjectName(objectName)}:{NormalizeLocationTabKey(locationOption)}";
+    }
+
+    private static string BuildQueryTabId(string objectName, ObjectLocationOption locationOption, bool isBusinessView)
+    {
+        string objectKind = isBusinessView ? "BSVW" : "TBLE";
+        return $"query:{NormalizeTabObjectName(objectName)}:{NormalizeLocationTabKey(locationOption)}:{objectKind}";
+    }
+
+    private static string BuildEventRulesTabId(string objectName, ObjectLocationOption locationOption)
+    {
+        return $"er:{NormalizeTabObjectName(objectName)}:{NormalizeLocationTabKey(locationOption)}";
+    }
+
+    private static string NormalizeTabObjectName(string objectName)
+    {
+        return string.IsNullOrWhiteSpace(objectName)
+            ? string.Empty
+            : objectName.Trim().ToUpperInvariant();
+    }
+
+    private static string NormalizeLocationTabKey(ObjectLocationOption? locationOption)
+    {
+        if (locationOption == null || locationOption.IsLocal || string.IsNullOrWhiteSpace(locationOption.PathCode))
+        {
+            return "LOCAL";
+        }
+
+        return locationOption.PathCode.Trim().ToUpperInvariant();
     }
 
     private async Task HandleConnectionLossAsync(string message)
@@ -741,6 +1000,13 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
             if (!string.Equals(DescriptionSearchText, description, StringComparison.Ordinal))
             {
                 DescriptionSearchText = description;
+            }
+
+            var selectedPathCode = _settingsService.Current.ObjectSearchPathCode;
+            var selectedLocation = ResolveLocationOption(selectedPathCode);
+            if (!MatchesLocation(SelectedObjectLocationOption, selectedLocation))
+            {
+                SelectedObjectLocationOption = selectedLocation;
             }
         });
     }

@@ -12,10 +12,7 @@
         Title="{Binding Title}"
         Width="1100" Height="700"
         Background="{DynamicResource AppWindowBackgroundBrush}"
-        ExtendClientAreaToDecorationsHint="True"
-        ExtendClientAreaChromeHints="NoChrome"
-        ExtendClientAreaTitleBarHeightHint="48"
-        SystemDecorations="None"
+        SystemDecorations="BorderOnly"
         CanResize="True">
 
     <Design.DataContext>
@@ -161,8 +158,20 @@
                                   Width="120"
                                   Margin="0,0,8,0"
                                   VerticalContentAlignment="Center"
-                                  ItemsSource="{Binding ObjectTypeOptions}"
-                                  SelectedItem="{Binding SelectedObjectTypeOption}">
+                                   ItemsSource="{Binding ObjectTypeOptions}"
+                                   SelectedItem="{Binding SelectedObjectTypeOption}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+
+                        <ComboBox Grid.Column="2"
+                                  Width="130"
+                                  VerticalContentAlignment="Center"
+                                  ItemsSource="{Binding ObjectLocationOptions}"
+                                  SelectedItem="{Binding SelectedObjectLocationOption}">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate>
                                     <TextBlock Text="{Binding Label}" />
@@ -565,7 +574,8 @@
             </Grid>
         </Grid>
 
-        <Grid RowDefinitions="6,*,6"
+        <Grid x:Name="ResizeOverlay"
+              RowDefinitions="6,*,6"
               ColumnDefinitions="6,*,6"
               Panel.ZIndex="10">
             <Border Grid.Row="0" Grid.Column="0"
