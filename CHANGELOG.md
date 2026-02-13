@@ -7,7 +7,7 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.1.0-prototype.4] - 2026-02-12
+## [0.1.0-prototype.5] - 2026-02-12
 
 ### Added
 - First prototype release of the Spec Lens solution.
