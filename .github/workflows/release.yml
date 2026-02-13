@@ -55,22 +55,26 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           $tag = $env:GITHUB_REF_NAME
-          $version = $tag.TrimStart('v')
-          $lines = Get-Content CHANGELOG.md
-          $startMatch = $lines | Select-String -Pattern "^## \\[$([regex]::Escape($version))\\]" | Select-Object -First 1
-          if (-not $startMatch) {
+          $version = $tag.TrimStart('v').Trim()
+          Write-Host "Release ref name: $tag"
+          Write-Host "Resolved release version: $version"
+          Write-Host "GITHUB_SHA: $env:GITHUB_SHA"
+          git show --no-patch --oneline $env:GITHUB_SHA
+
+          $changelogText = Get-Content CHANGELOG.md -Raw
+          $sectionPattern = "(?ms)^\\s*## \\[$([regex]::Escape($version))\\][^`r`n]*`r?`n.*?(?=^\\s*## \\[|\\z)"
+          $sectionMatch = [regex]::Match($changelogText, $sectionPattern)
+
+          if (-not $sectionMatch.Success) {
+            Write-Host "Detected changelog headers:"
+            [regex]::Matches($changelogText, "(?m)^\\s*## \\[[^\\]]+\\].*$") |
+              ForEach-Object { Write-Host "  $($_.Value.Trim())" }
             Write-Error "Version $version not found in CHANGELOG.md. Aborting release."
             exit 1
           }
-          $startIndex = $startMatch.LineNumber - 1
-          $endIndex = $lines.Length - 1
-          for ($i = $startIndex + 1; $i -lt $lines.Length; $i++) {
-            if ($lines[$i] -match "^## \\[") {
-              $endIndex = $i - 1
-              break
-            }
-          }
-          $lines[$startIndex..$endIndex] | Set-Content artifacts/release-notes.md
+
+          $releaseNotes = $sectionMatch.Value.TrimEnd()
+          Set-Content -Path artifacts/release-notes.md -Value $releaseNotes
 
       - name: Split symbols
         run: |
