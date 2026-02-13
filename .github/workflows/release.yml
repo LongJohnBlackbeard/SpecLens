@@ -62,7 +62,8 @@ jobs:
           git show --no-patch --oneline $env:GITHUB_SHA
 
           $changelogText = Get-Content CHANGELOG.md -Raw
-          $sectionPattern = "(?ms)^\\s*## \\[$([regex]::Escape($version))\\][^`r`n]*`r?`n.*?(?=^\\s*## \\[|\\z)"
+          $escapedVersion = [regex]::Escape($version)
+          $sectionPattern = '(?ms)^\s*## \[{0}\].*?(?=^\s*## \[|\z)' -f $escapedVersion
           $sectionMatch = [regex]::Match($changelogText, $sectionPattern)
 
           if (-not $sectionMatch.Success) {
