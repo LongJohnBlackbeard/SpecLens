@@ -4,7 +4,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 Spec Lens is a .NET solution for working with JDE objects and specifications through the native JDE C APIs. This 
-repository is open source, so anyone interested is welcome to contribute.
+repository is private for now.
 
 The repo includes a reusable client library, test harnesses, and a desktop UI. The packaged application is 
 distributed through releases today; in the future, it could be installed and updated via an installer or a similar deployment method.
