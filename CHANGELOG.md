@@ -7,6 +7,12 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0-prototype.7] - 2026-02-26
+
+### Fixed
+
+- Release workflow now publishes `JdeClient.Core` NuGet packages to GitLab by enumerating concrete `.nupkg` files, avoiding PowerShell wildcard expansion issues on `windows-latest`.
+
 ## [0.1.0-prototype.6] - 2026-02-26
 
 ### Added
