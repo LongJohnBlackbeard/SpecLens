@@ -53,11 +53,18 @@ jobs:
             -p:SymbolPackageFormat=snupkg
 
       - name: Publish JdeClient.Core to GitLab NuGet
-        run: >-
-          dotnet nuget push artifacts/JdeClient.Core/*.nupkg
-          --source https://gitlab.com/api/v4/projects/58788852/packages/nuget/index.json
-          --api-key ${{ secrets.GITLAB_NUGET_TOKEN }}
-          --skip-duplicate
+        run: |
+          $packages = Get-ChildItem -Path artifacts/JdeClient.Core -Filter *.nupkg -File
+          if (-not $packages) {
+            throw "No .nupkg files found in artifacts/JdeClient.Core."
+          }
+
+          foreach ($package in $packages) {
+            dotnet nuget push $package.FullName `
+              --source https://gitlab.com/api/v4/projects/58788852/packages/nuget/index.json `
+              --api-key ${{ secrets.GITLAB_NUGET_TOKEN }} `
+              --skip-duplicate
+          }
 
       - name: Build release notes from CHANGELOG
         run: |
