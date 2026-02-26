@@ -234,6 +234,92 @@ public class JdeClientTests
     }
 
     [Test]
+    public async Task JdeClient_GetObjectDescriptionAsync_ReturnsExactMatchDescription()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        var engine = Substitute.For<IF9860QueryEngine>();
+        session.QueryEngine.Returns(engine);
+        TestHelpers.SetupExecuteAsync<List<JdeObjectInfo>>(session);
+
+        var expected = new List<JdeObjectInfo>
+        {
+            new() { ObjectName = "F0101A", Description = "Address Book View" },
+            new() { ObjectName = "F0101", Description = "Address Book Master" }
+        };
+
+        engine.QueryObjects(
+                Arg.Any<JdeObjectType?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<int>(),
+                Arg.Any<string?>(),
+                Arg.Any<bool>())
+            .Returns(expected);
+
+        var client = new JdeClient(session, new JdeClientOptions());
+
+        // Act
+        var description = await client.GetObjectDescriptionAsync(
+            "  f0101  ",
+            JdeObjectType.Table,
+            dataSourceOverride: "Object Librarian - PY920",
+            allowDataSourceFallback: false);
+
+        // Assert
+        engine.Received(1).QueryObjects(
+            JdeObjectType.Table,
+            "f0101",
+            null,
+            25,
+            "Object Librarian - PY920",
+            false);
+        await Assert.That(description).IsEqualTo("Address Book Master");
+    }
+
+    [Test]
+    public async Task JdeClient_GetObjectDescriptionAsync_NoExactMatch_ReturnsNull()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        var engine = Substitute.For<IF9860QueryEngine>();
+        session.QueryEngine.Returns(engine);
+        TestHelpers.SetupExecuteAsync<List<JdeObjectInfo>>(session);
+
+        engine.QueryObjects(
+                null,
+                "F0101",
+                null,
+                25,
+                null,
+                true)
+            .Returns(new List<JdeObjectInfo> { new() { ObjectName = "F0101A", Description = "Address Book View" } });
+
+        var client = new JdeClient(session, new JdeClientOptions());
+
+        // Act
+        var description = await client.GetObjectDescriptionAsync("F0101");
+
+        // Assert
+        await Assert.That(description).IsNull();
+    }
+
+    [Test]
+    public async Task JdeClient_GetObjectDescriptionAsync_EmptyName_ThrowsArgumentException()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        var client = new JdeClient(session, new JdeClientOptions());
+
+        // Act
+        var exception = await Assert.That(async () => await client.GetObjectDescriptionAsync("  "))
+            .ThrowsExactly<ArgumentException>();
+
+        // Assert
+        await Assert.That(exception.ParamName).IsEqualTo("objectName");
+    }
+
+    [Test]
     public async Task JdeClient_GetEventRulesTreeAsync_NullObject_ThrowsArgumentNullException()
     {
         // Arrange

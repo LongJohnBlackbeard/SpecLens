@@ -485,6 +485,7 @@ public class JdeClientTableTests
             ["OMWPRJID"] = "PRJ1",
             ["OMWOBJID"] = "R123456!VER000001",
             ["OMWOT"] = "UBE",
+            ["OMWDESC"] = "Run Report",
             ["PATHCD"] = "PY920"
         });
 
@@ -513,6 +514,7 @@ public class JdeClientTableTests
         await Assert.That(objects[0].ObjectName).IsEqualTo("R123456");
         await Assert.That(objects[0].VersionName).IsEqualTo("VER000001");
         await Assert.That(objects[0].ObjectType).IsEqualTo("UBE");
+        await Assert.That(objects[0].Description).IsEqualTo("Run Report");
         await Assert.That(objects[0].PathCode).IsEqualTo("PY920");
     }
 

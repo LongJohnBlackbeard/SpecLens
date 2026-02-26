@@ -282,6 +282,7 @@ public class JdeClientStaticHelpersTests
                     ["OMWPRJID"] = "PRJ1",
                     ["OMWOBJID"] = "OBJ!VER123456789",
                     ["OMWOT"] = "TBLE",
+                    ["OMWDESC"] = "Address Book Master",
                     ["PATHCD"] = "DV920"
                 },
                 new()
@@ -297,6 +298,7 @@ public class JdeClientStaticHelpersTests
         await Assert.That(objects.Count).IsEqualTo(1);
         await Assert.That(objects[0].ObjectName).IsEqualTo("OBJ");
         await Assert.That(objects[0].VersionName).IsEqualTo("VER1234567");
+        await Assert.That(objects[0].Description).IsEqualTo("Address Book Master");
         await Assert.That(objects[0].PathCode).IsEqualTo("DV920");
     }
 

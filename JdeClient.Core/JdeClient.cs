@@ -138,6 +138,38 @@ public partial class JdeClient : IDisposable
             }
         }, cancellationToken);
     }
+    
+    /// <summary>
+    /// Retrieve an object's description from F9860 by object name.
+    /// </summary>
+    public async Task<string?> GetObjectDescriptionAsync(
+        string objectName,
+        JdeObjectType? objectType = null,
+        string? dataSourceOverride = null,
+        bool allowDataSourceFallback = true,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(objectName))
+        {
+            throw new ArgumentException("Object name is required.", nameof(objectName));
+        }
+
+        var normalizedObjectName = objectName.Trim();
+
+        var matches = await GetObjectsAsync(
+            objectType,
+            normalizedObjectName,
+            descriptionPattern: null,
+            maxResults: 25,
+            dataSourceOverride,
+            allowDataSourceFallback,
+            cancellationToken);
+
+        var exactMatch = matches.FirstOrDefault(item =>
+            string.Equals(item.ObjectName?.Trim(), normalizedObjectName, StringComparison.OrdinalIgnoreCase));
+
+        return exactMatch?.Description;
+    }
 
     #endregion
 
@@ -1467,8 +1499,8 @@ public partial class JdeClient : IDisposable
         }, cancellationToken);
     }
 
-    
-    
+
+
     /// <summary>
     /// Retrieve event rule lines for a specific event spec key (EVSK).
     /// </summary>
@@ -1876,8 +1908,8 @@ public partial class JdeClient : IDisposable
         items.Sort((a, b) => string.Compare(a.ProjectName, b.ProjectName, StringComparison.OrdinalIgnoreCase));
         return items;
     }
-    
-    
+
+
 
     internal static List<JdeProjectObjectInfo> MapProjectObjects(JdeQueryResult result)
     {
@@ -1895,7 +1927,7 @@ public partial class JdeClient : IDisposable
             }
 
             SplitObjectId(objectId, out var objectName, out var versionName);
-
+            
             items.Add(new JdeProjectObjectInfo
             {
                 ProjectName = projectName.Trim(),
@@ -1903,6 +1935,7 @@ public partial class JdeClient : IDisposable
                 ObjectName = objectName.Trim(),
                 VersionName = versionName,
                 ObjectType = objectType,
+                Description = FindFirstValue(row, "OMWDESC", "DESCRIPTION"),
                 PathCode = FindFirstValue(row, "PATHCD", "PATHCODE"),
                 SourceRelease = FindFirstValue(row, "SRCRLS", "SOURCE_RELEASE"),
                 ObjectStatus = FindFirstValue(row, "OMWOST", "OBJECT_STATUS"),
@@ -1980,7 +2013,7 @@ public partial class JdeClient : IDisposable
     }
 
     #endregion
-    
+
     #region UserDefinedCodes
 
     /// <summary>
@@ -2002,7 +2035,7 @@ public partial class JdeClient : IDisposable
         var filters = new List<JdeFilter>();
         AddWildcardFilter(filters, "SY", productCode);
         AddWildcardFilter(filters, "RT", userDefinedCode);
-        
+
         var results = await QueryTableAsync(
             "F0004",
             filters,
@@ -2013,7 +2046,7 @@ public partial class JdeClient : IDisposable
         return codes;
     }
 
-    
+
     internal static List<JdeUserDefinedCodeTypes> MapUserDefinedCodeTypes(JdeQueryResult result)
     {
         var codes = new List<JdeUserDefinedCodeTypes>();
@@ -2059,7 +2092,7 @@ public partial class JdeClient : IDisposable
         {
             throw new ArgumentNullException(nameof(userDefinedCodeType));
         }
-        
+
         var filters = new List<JdeFilter>();
         AddWildcardFilter(filters, "SY", productCode);
         AddWildcardFilter(filters, "RT", userDefinedCodeType);
@@ -2067,7 +2100,7 @@ public partial class JdeClient : IDisposable
         AddWildcardFilter(filters, "KY", userDefinedCode);
         AddLikeFilter(filters, "DL01", description);
         AddLikeFilter(filters, "DL02", description2);
-        
+
         var results = await QueryTableAsync(
             "F0005",
             filters,
@@ -2092,7 +2125,7 @@ public partial class JdeClient : IDisposable
             var description2 = FindFirstValue(row, "DL02");
             var specialHandlingCode = FindFirstValue(row, "SPHD");
             var hardCoded = FindFirstValue(row, "HRDC");
-            
+
             codes.Add(new JdeUserDefinedCodes(productCode, userDefinedCodeType, userDefinedCode, description,
                 description2, specialHandlingCode, hardCoded));
         }

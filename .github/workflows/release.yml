@@ -8,6 +8,7 @@ on:
 jobs:
   build-release:
     runs-on: windows-latest
+    environment: release
     permissions:
       contents: write
 
@@ -50,6 +51,13 @@ jobs:
             -p:PackageVersion=$version `
             -p:IncludeSymbols=true `
             -p:SymbolPackageFormat=snupkg
+
+      - name: Publish JdeClient.Core to GitLab NuGet
+        run: >-
+          dotnet nuget push artifacts/JdeClient.Core/*.nupkg
+          --source https://gitlab.com/api/v4/projects/58788852/packages/nuget/index.json
+          --api-key ${{ secrets.GITLAB_NUGET_TOKEN }}
+          --skip-duplicate
 
       - name: Build release notes from CHANGELOG
         run: |
