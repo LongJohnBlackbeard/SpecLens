@@ -600,7 +600,8 @@ public class JdeModelAndExceptionTests
             SourceRelease = "E920",
             ObjectStatus = "28",
             VersionStatus = "01",
-            User = "JDE"
+            User = "JDE",
+            Description = "Address Book Master"
         };
 
         await Assert.That(info.ProjectName).IsEqualTo("PRJ001");
@@ -613,6 +614,7 @@ public class JdeModelAndExceptionTests
         await Assert.That(info.ObjectStatus).IsEqualTo("28");
         await Assert.That(info.VersionStatus).IsEqualTo("01");
         await Assert.That(info.User).IsEqualTo("JDE");
+        await Assert.That(info.Description).IsEqualTo("Address Book Master");
         await Assert.That(info.ToString()).IsEqualTo("F0101|ZJDE0001 (TBLE)");
     }
 

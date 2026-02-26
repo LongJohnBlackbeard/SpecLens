@@ -55,5 +55,10 @@ public sealed class JdeProjectObjectInfo
     /// </summary>
     public string? User { get; set; }
 
+    /// <summary>
+    /// Object description (OMWDESC).
+    /// </summary>
+    public string? Description { get; set; }
+
     public override string ToString() => $"{ObjectId} ({ObjectType})";
 }
