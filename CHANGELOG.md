@@ -7,9 +7,22 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0-prototype.6] - 2026-02-26
+
+### Added
+
+- `JdeClient.Core` release workflow now publishes NuGet packages directly to the GitLab package registry.
+- New `JdeClient.GetObjectDescriptionAsync(...)` helper for exact object-name description lookup from F9860.
+
+### Changed
+
+- `JdeProjectObjectInfo` now includes `Description` mapped from OMW object data.
+- Added unit-test coverage for object-description lookup and project-object description mapping.
+
 ## [0.1.0-prototype.5] - 2026-02-12
 
 ### Added
+
 - First prototype release of the Spec Lens solution.
 - `JdeClient.Core` library for accessing JD Edwards through native JDE C APIs.
 - Avalonia desktop app for object browsing, table/view specs, and event-rules exploration.

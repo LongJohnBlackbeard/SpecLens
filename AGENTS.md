@@ -190,6 +190,9 @@ Run these locally before considering a change complete:
 - Update docs when behavior changes (README or `docs/LOGGING.md`).
 - Avoid introducing new libraries, architectural patterns, or cross-cutting abstractions unless explicitly requested.
 
+## Markdown standards
+For any Markdown edits, write valid CommonMark and keep markdownlint rules passing; in particular, ensure lists are surrounded by blank lines (MD032).
+
 **Pragmatic heuristics:**
 - If you can solve it by extending an existing type, do that before adding a new abstraction.
 - Keep PRs easy to review: small diffs, clear intent, minimal churn.
