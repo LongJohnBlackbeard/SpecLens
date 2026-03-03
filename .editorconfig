@@ -8,3 +8,18 @@ trim_trailing_whitespace = true
 
 [*.md]
 trim_trailing_whitespace = false
+
+[*.sln]
+end_of_line = crlf
+
+[*.csproj]
+end_of_line = crlf
+
+[*.props]
+end_of_line = crlf
+
+[*.targets]
+end_of_line = crlf
+
+[*.ps1]
+end_of_line = crlf

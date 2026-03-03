@@ -7,6 +7,31 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0-prototype.8] - 2026-03-03
+
+### Changed
+
+- Aligned table/view spec and query source-resolution workflows with FAT-client logs, including stricter separation of path code versus runtime data source behavior.
+- Updated spec-loading behavior so explicit spec-source requests are strict (no runtime-default fallback), while default public API workflows still use standard resolution when overrides are not supplied.
+- Expanded system-table handling for `F9860`, `F98611`, and `F00942` so explicit data-source overrides are ignored for those system contexts.
+- Added explicit-source table-spec retrieval path using `JDB_OpenTable` + `JDBRS_GetTableSpecsFromHandle`.
+- Reworked business-view spec retrieval to use `jdeSpecOpen*` source-aware flows and parse packed/XML payloads consistently.
+- Updated internal metadata/query engine interfaces and call chains to carry explicit spec-source override options through table/view metadata APIs.
+
+### Fixed
+
+- Corrected Avalonia startup compatibility after ReactiveUI API changes by updating `UseReactiveUI` initialization to the new builder-callback signature.
+- Fixed regressions where explicit object/spec source selections could be routed through unintended fallback paths.
+
+### Tests
+
+- Added and updated unit tests covering path-code token parsing, `F00942` path-code-to-data-source resolution, system-table override behavior, `LOCAL` handling, and strict explicit-source metadata retrieval paths.
+
+### Dependencies
+
+- Bumped TUnit from `1.17.29` to `1.18.0`.
+- Updated `actions/upload-artifact` from v6 to v7 in GitHub workflows.
+
 ## [0.1.0-prototype.7] - 2026-02-26
 
 ### Fixed
