@@ -112,6 +112,7 @@ public static class JdeStructures
     {
         Undefined = 0,
         BusFunc = 1,
+        BusView = 2,
         Dstmpl = 9,
         GbrLink = 12,
         GbrSpec = 13
@@ -219,6 +220,12 @@ public static class JdeStructures
     public struct JdeSpecKeyBusFuncByObject
     {
         public NID ObjectName;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 1)]
+    public struct JdeSpecKeyBusView
+    {
+        public NID ViewName;
     }
     #endregion
 

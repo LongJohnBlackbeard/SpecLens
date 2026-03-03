@@ -55,22 +55,36 @@ internal interface IJdeTableQueryEngine : IDisposable
     /// <summary>
     /// Fetch table metadata from specs.
     /// </summary>
-    JdeTableInfo GetTableInfo(string tableName, string? description, string? systemCode);
+    JdeTableInfo GetTableInfo(
+        string tableName,
+        string? description,
+        string? systemCode,
+        string? specDataSourceOverride = null,
+        bool allowSpecDataSourceFallback = true);
 
     /// <summary>
     /// Fetch business view metadata from specs.
     /// </summary>
-    JdeBusinessViewInfo? GetBusinessViewInfo(string viewName);
+    JdeBusinessViewInfo? GetBusinessViewInfo(
+        string viewName,
+        string? specDataSourceOverride = null,
+        bool allowSpecDataSourceFallback = true);
 
     /// <summary>
     /// Get resolved columns for a business view.
     /// </summary>
-    List<JdeColumn> GetViewColumns(string viewName);
+    List<JdeColumn> GetViewColumns(
+        string viewName,
+        string? specDataSourceOverride = null,
+        bool allowSpecDataSourceFallback = true);
 
     /// <summary>
     /// Get index metadata for a table.
     /// </summary>
-    List<JdeIndexInfo> GetTableIndexes(string tableName);
+    List<JdeIndexInfo> GetTableIndexes(
+        string tableName,
+        string? specDataSourceOverride = null,
+        bool allowSpecDataSourceFallback = true);
 
     /// <summary>
     /// Get data dictionary titles for the given data items.

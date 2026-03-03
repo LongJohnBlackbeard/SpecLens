@@ -654,11 +654,14 @@ internal class F9860QueryEngine : IF9860QueryEngine
     {
         DebugLog("[DEBUG] Opening F9860 table...");
 
-        string? requestedDataSource = string.IsNullOrWhiteSpace(dataSourceOverride)
-            ? DataSourceResolver.ResolveTableDataSource(_hUser, "F9860")
-            : dataSourceOverride;
-        string? resolvedDataSource = ResolveSystemObjectLibrarianDataSource(requestedDataSource);
-        DebugLog($"[DEBUG] Requested data source: {requestedDataSource ?? "<default>"}, effective: {resolvedDataSource ?? "<default>"}");
+        if (!string.IsNullOrWhiteSpace(dataSourceOverride))
+        {
+            DebugLog($"[DEBUG] Ignoring F9860 data source override '{dataSourceOverride}' (system table uses implicit system data source).");
+        }
+
+        // F9860 is a system table. Let runtime default resolution pick the system data source.
+        string? resolvedDataSource = null;
+        DebugLog("[DEBUG] Effective F9860 data source: <runtime-default>");
 
         NID tableNid = new NID("F9860");
         int result = JDB_OpenTable(
@@ -670,16 +673,10 @@ internal class F9860QueryEngine : IF9860QueryEngine
             resolvedDataSource,
             out HREQUEST hRequest);
 
-        bool forceSystemTableFallback = ShouldForceSystemTableFallback(requestedDataSource);
         if ((result != JDEDB_PASSED || !hRequest.IsValid) &&
-            (allowDataSourceFallback || forceSystemTableFallback) &&
+            allowDataSourceFallback &&
             !string.IsNullOrWhiteSpace(resolvedDataSource))
         {
-            if (forceSystemTableFallback && !allowDataSourceFallback)
-            {
-                DebugLog("[DEBUG] F9860 open failed with pathcode-specific Object Librarian data source; retrying with default Object Librarian.");
-            }
-
             result = JDB_OpenTable(
                 _hUser,
                 tableNid,

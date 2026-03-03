@@ -20,7 +20,7 @@ internal static class DataSourceResolver
             return null;
         }
 
-        if (tableName.Equals("F98611", StringComparison.OrdinalIgnoreCase))
+        if (IsSystemDataSourceTable(tableName))
         {
             return "System - 920";
         }
@@ -41,6 +41,13 @@ internal static class DataSourceResolver
         }
 
         return null;
+    }
+
+    private static bool IsSystemDataSourceTable(string tableName)
+    {
+        return tableName.Equals("F98611", StringComparison.OrdinalIgnoreCase) ||
+               tableName.Equals("F9860", StringComparison.OrdinalIgnoreCase) ||
+               tableName.Equals("F00942", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? TryResolveObjectDataSource(HUSER hUser, string objectName, char objectType)

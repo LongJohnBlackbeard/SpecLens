@@ -357,6 +357,81 @@ public class JdeClientStaticHelpersTests
     }
 
     [Test]
+    public async Task ResolvePathCodeDataSource_PrefersEmdatsForObjectSpecs()
+    {
+        var result = new JdeQueryResult
+        {
+            Rows = new List<Dictionary<string, object>>
+            {
+                new()
+                {
+                    ["EMPATHCD"] = "PY920",
+                    ["EMDATS"] = "Object Librarian - PY920",
+                    ["DATS"] = "Data Dictionary - PY920"
+                }
+            }
+        };
+
+        var resolved = JdeClient.ResolvePathCodeDataSource(result, "PY920", preferDataDictionaryDataSource: false);
+
+        await Assert.That(resolved).IsEqualTo("Object Librarian - PY920");
+    }
+
+    [Test]
+    public async Task ResolvePathCodeDataSource_PrefersDatsForDataDictionaryRequests()
+    {
+        var result = new JdeQueryResult
+        {
+            Rows = new List<Dictionary<string, object>>
+            {
+                new()
+                {
+                    ["EMPATHCD"] = "PY920",
+                    ["EMDATS"] = "Object Librarian - PY920",
+                    ["DATS"] = "Data Dictionary - PY920"
+                }
+            }
+        };
+
+        var resolved = JdeClient.ResolvePathCodeDataSource(result, "PY920", preferDataDictionaryDataSource: true);
+
+        await Assert.That(resolved).IsEqualTo("Data Dictionary - PY920");
+    }
+
+    [Test]
+    public async Task ResolvePathCodeDataSource_UsesDatsWhenEmdatsMissing()
+    {
+        var result = new JdeQueryResult
+        {
+            Rows = new List<Dictionary<string, object>>
+            {
+                new()
+                {
+                    ["EMPATHCD"] = "LOCAL",
+                    ["EMDATS"] = "",
+                    ["DATS"] = "Data Dictionary - LOCAL"
+                }
+            }
+        };
+
+        var resolved = JdeClient.ResolvePathCodeDataSource(result, "LOCAL", preferDataDictionaryDataSource: false);
+
+        await Assert.That(resolved).IsEqualTo("Data Dictionary - LOCAL");
+    }
+
+    [Test]
+    public async Task TryExtractPathCodeToken_RecognizesRawAndPrefixedPathCodes()
+    {
+        await Assert.That(JdeClient.TryExtractPathCodeToken("PY920")).IsEqualTo("PY920");
+        await Assert.That(JdeClient.TryExtractPathCodeToken("Object Librarian - PY920")).IsEqualTo("PY920");
+        await Assert.That(JdeClient.TryExtractPathCodeToken("Central Objects - PY920")).IsEqualTo("PY920");
+        await Assert.That(JdeClient.TryExtractPathCodeToken("LOCAL")).IsEqualTo("LOCAL");
+        await Assert.That(JdeClient.TryExtractPathCodeToken("Object Librarian - LOCAL")).IsEqualTo("LOCAL");
+        await Assert.That(JdeClient.TryExtractPathCodeToken("Central Objects - LOCAL")).IsEqualTo("LOCAL");
+        await Assert.That(JdeClient.TryExtractPathCodeToken("System - 920")).IsNull();
+    }
+
+    [Test]
     public async Task FilterProjectsByUser_FiltersToUserSet()
     {
         var projects = new List<JdeProjectInfo>

@@ -31,6 +31,23 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
+    private string? ResolveOpenDataSource(string tableOrViewName, string? dataSourceOverride)
+    {
+        if (string.Equals(tableOrViewName, "F9860", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_options.EnableDebug && !string.IsNullOrWhiteSpace(dataSourceOverride))
+            {
+                _options.WriteLog($"[DEBUG] Ignoring F9860 data source override '{dataSourceOverride}' (system table uses implicit system data source).");
+            }
+
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(dataSourceOverride)
+            ? DataSourceResolver.ResolveTableDataSource(_hUser, tableOrViewName)
+            : dataSourceOverride;
+    }
+
     /// <summary>
     /// Query a table with no filters.
     /// </summary>
@@ -79,9 +96,7 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
         HREQUEST hRequest = new HREQUEST();
         try
         {
-            string? resolvedDataSource = string.IsNullOrWhiteSpace(dataSourceOverride)
-                ? DataSourceResolver.ResolveTableDataSource(_hUser, tableName)
-                : dataSourceOverride;
+            string? resolvedDataSource = ResolveOpenDataSource(tableName, dataSourceOverride);
             int openResult = JDB_OpenTable(
                 _hUser,
                 new NID(tableName),
@@ -93,7 +108,8 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
 
             if (openResult != JDEDB_PASSED || !hRequest.IsValid)
             {
-                if (!string.IsNullOrWhiteSpace(resolvedDataSource))
+                if (string.IsNullOrWhiteSpace(dataSourceOverride) &&
+                    !string.IsNullOrWhiteSpace(resolvedDataSource))
                 {
                     openResult = JDB_OpenTable(
                         _hUser,
@@ -208,9 +224,7 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
         HREQUEST hRequest = new HREQUEST();
         try
         {
-            string? resolvedDataSource = string.IsNullOrWhiteSpace(dataSourceOverride)
-                ? DataSourceResolver.ResolveTableDataSource(_hUser, tableName)
-                : dataSourceOverride;
+            string? resolvedDataSource = ResolveOpenDataSource(tableName, dataSourceOverride);
 
             int openResult = JDB_OpenTable(
                 _hUser,
@@ -223,7 +237,8 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
 
             if (openResult != JDEDB_PASSED || !hRequest.IsValid)
             {
-                if (!string.IsNullOrWhiteSpace(resolvedDataSource))
+                if (string.IsNullOrWhiteSpace(dataSourceOverride) &&
+                    !string.IsNullOrWhiteSpace(resolvedDataSource))
                 {
                     openResult = JDB_OpenTable(
                         _hUser,
@@ -291,9 +306,7 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
         HREQUEST hRequest = new HREQUEST();
         try
         {
-            string? resolvedDataSource = string.IsNullOrWhiteSpace(dataSourceOverride)
-                ? DataSourceResolver.ResolveTableDataSource(_hUser, tableName)
-                : dataSourceOverride;
+            string? resolvedDataSource = ResolveOpenDataSource(tableName, dataSourceOverride);
             int openResult = JDB_OpenTable(
                 _hUser,
                 new NID(tableName),
@@ -305,7 +318,9 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
 
             if (openResult != JDEDB_PASSED || !hRequest.IsValid)
             {
-                if (allowDataSourceFallback && !string.IsNullOrWhiteSpace(resolvedDataSource))
+                if (allowDataSourceFallback &&
+                    string.IsNullOrWhiteSpace(dataSourceOverride) &&
+                    !string.IsNullOrWhiteSpace(resolvedDataSource))
                 {
                     openResult = JDB_OpenTable(
                         _hUser,
@@ -416,9 +431,7 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
         HREQUEST hRequest = new HREQUEST();
         try
         {
-            string? resolvedDataSource = string.IsNullOrWhiteSpace(dataSourceOverride)
-                ? DataSourceResolver.ResolveTableDataSource(_hUser, viewName)
-                : dataSourceOverride;
+            string? resolvedDataSource = ResolveOpenDataSource(viewName, dataSourceOverride);
             int openResult = JDB_OpenView(
                 _hUser,
                 new NID(viewName),
@@ -427,7 +440,9 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
 
             if (openResult != JDEDB_PASSED || !hRequest.IsValid)
             {
-                if (allowDataSourceFallback && !string.IsNullOrWhiteSpace(resolvedDataSource))
+                if (allowDataSourceFallback &&
+                    string.IsNullOrWhiteSpace(dataSourceOverride) &&
+                    !string.IsNullOrWhiteSpace(resolvedDataSource))
                 {
                     openResult = JDB_OpenView(
                         _hUser,
@@ -504,7 +519,12 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
     }
 
     /// <inheritdoc />
-    public JdeTableInfo GetTableInfo(string tableName, string? description, string? systemCode)
+    public JdeTableInfo GetTableInfo(
+        string tableName,
+        string? description,
+        string? systemCode,
+        string? specDataSourceOverride = null,
+        bool allowSpecDataSourceFallback = true)
     {
         if (string.IsNullOrWhiteSpace(tableName))
         {
@@ -513,7 +533,10 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
 
         EnsureInitialized();
 
-        var columns = GetTableColumns(tableName);
+        var columns = GetTableColumns(
+            tableName,
+            specDataSourceOverride,
+            allowSpecDataSourceFallback);
         if (columns.Count == 0)
         {
             throw new JdeTableException(tableName, "No columns found in table specs.");
@@ -529,7 +552,10 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
     }
 
     /// <inheritdoc />
-    public JdeBusinessViewInfo? GetBusinessViewInfo(string viewName)
+    public JdeBusinessViewInfo? GetBusinessViewInfo(
+        string viewName,
+        string? specDataSourceOverride = null,
+        bool allowSpecDataSourceFallback = true)
     {
         if (string.IsNullOrWhiteSpace(viewName))
         {
@@ -539,13 +565,22 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
         EnsureInitialized();
 
         using var specProvider = new SpecBusinessViewMetadataService(_hUser, _options);
-        return specProvider.GetBusinessViewInfo(viewName);
+        return specProvider.GetBusinessViewInfo(
+            viewName,
+            specDataSourceOverride,
+            allowSpecDataSourceFallback);
     }
 
     /// <inheritdoc />
-    public List<JdeColumn> GetViewColumns(string viewName)
+    public List<JdeColumn> GetViewColumns(
+        string viewName,
+        string? specDataSourceOverride = null,
+        bool allowSpecDataSourceFallback = true)
     {
-        var viewInfo = GetBusinessViewInfo(viewName);
+        var viewInfo = GetBusinessViewInfo(
+            viewName,
+            specDataSourceOverride,
+            allowSpecDataSourceFallback);
         if (viewInfo == null || viewInfo.Columns.Count == 0)
         {
             return new List<JdeColumn>();
@@ -576,17 +611,29 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
         return columns;
     }
 
-    private List<JdeColumn> GetTableColumns(string tableName)
+    private List<JdeColumn> GetTableColumns(
+        string tableName,
+        string? specDataSourceOverride = null,
+        bool allowSpecDataSourceFallback = true)
     {
         using var specProvider = new SpecTableMetadataService(_hUser, _options);
-        return specProvider.GetColumns(tableName);
+        return specProvider.GetColumns(
+            tableName,
+            specDataSourceOverride,
+            allowSpecDataSourceFallback);
     }
 
     /// <inheritdoc />
-    public List<JdeIndexInfo> GetTableIndexes(string tableName)
+    public List<JdeIndexInfo> GetTableIndexes(
+        string tableName,
+        string? specDataSourceOverride = null,
+        bool allowSpecDataSourceFallback = true)
     {
         using var specProvider = new SpecTableMetadataService(_hUser, _options);
-        return specProvider.GetIndexes(tableName);
+        return specProvider.GetIndexes(
+            tableName,
+            specDataSourceOverride,
+            allowSpecDataSourceFallback);
     }
 
     /// <inheritdoc />

@@ -157,6 +157,37 @@ public class SpecTableMetadataServiceTests
     }
 
     [Test]
+    public async Task BuildSpecOverrideCandidates_ObjectLibrarian_AddsPathCodeCandidates()
+    {
+        List<string> candidates = SpecTableMetadataService.BuildSpecOverrideCandidates("Object Librarian - PY920");
+
+        await Assert.That(candidates.Count).IsEqualTo(3);
+        await Assert.That(candidates[0]).IsEqualTo("Object Librarian - PY920");
+        await Assert.That(candidates[1]).IsEqualTo("PY920");
+        await Assert.That(candidates[2]).IsEqualTo("Central Objects - PY920");
+    }
+
+    [Test]
+    public async Task BuildSpecOverrideCandidates_ObjectLibrarianLocal_AddsLocalCandidates()
+    {
+        List<string> candidates = SpecTableMetadataService.BuildSpecOverrideCandidates("Object Librarian - LOCAL");
+
+        await Assert.That(candidates.Count).IsEqualTo(3);
+        await Assert.That(candidates[0]).IsEqualTo("Object Librarian - LOCAL");
+        await Assert.That(candidates[1]).IsEqualTo("LOCAL");
+        await Assert.That(candidates[2]).IsEqualTo("Central Objects - LOCAL");
+    }
+
+    [Test]
+    public async Task BuildSpecOverrideCandidates_DataSourceOnly_UsesOriginalValue()
+    {
+        List<string> candidates = SpecTableMetadataService.BuildSpecOverrideCandidates("System - 920");
+
+        await Assert.That(candidates.Count).IsEqualTo(1);
+        await Assert.That(candidates[0]).IsEqualTo("System - 920");
+    }
+
+    [Test]
     public async Task IsHeaderValid_PackedHeader_ValidHeader()
     {
         var header = new TABLECACHE_HEADER

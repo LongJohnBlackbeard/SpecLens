@@ -75,7 +75,7 @@ public class JdeClientTableTests
             ViewName = "V0101A"
         };
         expected.Columns.Add(new JdeBusinessViewColumn());
-        engine.GetBusinessViewInfo("V0101A").Returns(expected);
+        engine.GetBusinessViewInfo("V0101A", null, true).Returns(expected);
 
         var factory = Substitute.For<IJdeTableQueryEngineFactory>();
         factory.Create(Arg.Any<JdeClientOptions>()).Returns(engine);
@@ -101,7 +101,7 @@ public class JdeClientTableTests
         {
             new() { Name = "IDX1" }
         };
-        engine.GetTableIndexes("F4801").Returns(expected);
+        engine.GetTableIndexes("F4801", null, true).Returns(expected);
 
         var factory = Substitute.For<IJdeTableQueryEngineFactory>();
         factory.Create(Arg.Any<JdeClientOptions>()).Returns(engine);

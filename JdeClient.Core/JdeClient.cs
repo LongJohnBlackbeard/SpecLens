@@ -840,8 +840,8 @@ public partial class JdeClient : IDisposable
     /// Get table metadata including column information.
     /// </summary>
     /// <param name="tableName">Table name (e.g., "F0101")</param>
-    /// <param name="objectLibrarianDataSourceOverride">Optional Object Librarian data source override (e.g., "Object Librarian - PY920")</param>
-    /// <param name="allowObjectLibrarianFallback">Allow Object Librarian fallback when override is unavailable.</param>
+    /// <param name="objectLibrarianDataSourceOverride">Optional spec source override (data source name or path code) used when reading metadata specs.</param>
+    /// <param name="allowObjectLibrarianFallback">Allow fallback when the requested spec source is unavailable.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Table metadata or null if not found</returns>
     public async Task<JdeTableInfo?> GetTableInfoAsync(
@@ -857,7 +857,15 @@ public partial class JdeClient : IDisposable
             try
             {
                 using var queryEngine = _tableQueryEngineFactory.Create(_options);
-                var tableInfo = queryEngine.GetTableInfo(tableName, null, null);
+                string? resolvedSpecDataSource = ResolveTableSpecSourceOverride(
+                    queryEngine,
+                    objectLibrarianDataSourceOverride);
+                var tableInfo = queryEngine.GetTableInfo(
+                    tableName,
+                    null,
+                    null,
+                    resolvedSpecDataSource,
+                    allowObjectLibrarianFallback);
                 if (tableInfo == null)
                 {
                     return null;
@@ -866,8 +874,8 @@ public partial class JdeClient : IDisposable
                 var objectInfo = _session.QueryEngine.GetObjectByName(
                     tableName,
                     JdeObjectType.Table,
-                    objectLibrarianDataSourceOverride,
-                    allowObjectLibrarianFallback);
+                    dataSourceOverride: null,
+                    allowDataSourceFallback: true);
                 if (objectInfo != null)
                 {
                     tableInfo.Description = objectInfo.Description;
@@ -906,8 +914,8 @@ public partial class JdeClient : IDisposable
     /// Get business view metadata including columns, tables, and joins.
     /// </summary>
     /// <param name="viewName">Business view name (e.g., "V0101A")</param>
-    /// <param name="objectLibrarianDataSourceOverride">Optional Object Librarian data source override (e.g., "Object Librarian - PY920")</param>
-    /// <param name="allowObjectLibrarianFallback">Allow Object Librarian fallback when override is unavailable.</param>
+    /// <param name="objectLibrarianDataSourceOverride">Optional spec source override (data source name or path code) used when reading metadata specs.</param>
+    /// <param name="allowObjectLibrarianFallback">Allow fallback when the requested spec source is unavailable.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Business view metadata or null if not found</returns>
     public async Task<JdeBusinessViewInfo?> GetBusinessViewInfoAsync(
@@ -923,7 +931,11 @@ public partial class JdeClient : IDisposable
             try
             {
                 using var queryEngine = _tableQueryEngineFactory.Create(_options);
-                var viewInfo = queryEngine.GetBusinessViewInfo(viewName);
+                string? resolvedSpecDataSource = NormalizeSpecSourceOverride(objectLibrarianDataSourceOverride);
+                var viewInfo = queryEngine.GetBusinessViewInfo(
+                    viewName,
+                    resolvedSpecDataSource,
+                    allowObjectLibrarianFallback);
                 if (viewInfo == null)
                 {
                     return null;
@@ -932,8 +944,8 @@ public partial class JdeClient : IDisposable
                 var objectInfo = _session.QueryEngine.GetObjectByName(
                     viewName,
                     JdeObjectType.BusinessView,
-                    objectLibrarianDataSourceOverride,
-                    allowObjectLibrarianFallback);
+                    dataSourceOverride: null,
+                    allowDataSourceFallback: true);
                 if (objectInfo != null)
                 {
                     viewInfo.Description = objectInfo.Description;
@@ -1301,8 +1313,8 @@ public partial class JdeClient : IDisposable
     /// Retrieve table index metadata from table specs.
     /// </summary>
     /// <param name="tableName">Table name (e.g., "F0101")</param>
-    /// <param name="objectLibrarianDataSourceOverride">Optional Object Librarian data source override (e.g., "Object Librarian - PY920")</param>
-    /// <param name="allowObjectLibrarianFallback">Allow Object Librarian fallback when override is unavailable.</param>
+    /// <param name="objectLibrarianDataSourceOverride">Optional spec source override (data source name or path code) used when reading metadata specs.</param>
+    /// <param name="allowObjectLibrarianFallback">Allow fallback when the requested spec source is unavailable.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Index definitions</returns>
     public async Task<List<JdeIndexInfo>> GetTableIndexesAsync(
@@ -1318,7 +1330,13 @@ public partial class JdeClient : IDisposable
             try
             {
                 using var queryEngine = _tableQueryEngineFactory.Create(_options);
-                return queryEngine.GetTableIndexes(tableName);
+                string? resolvedSpecDataSource = ResolveTableSpecSourceOverride(
+                    queryEngine,
+                    objectLibrarianDataSourceOverride);
+                return queryEngine.GetTableIndexes(
+                    tableName,
+                    resolvedSpecDataSource,
+                    allowObjectLibrarianFallback);
             }
             catch (Exception ex) when (ex is not JdeException)
             {
@@ -1738,7 +1756,12 @@ public partial class JdeClient : IDisposable
             try
             {
                 using var queryEngine = _tableQueryEngineFactory.Create(_options);
-                var result = queryEngine.QueryTable("F00942", maxRows: 0, Array.Empty<JdeFilter>(), dataSourceOverride);
+                if (_options.EnableDebug && !string.IsNullOrWhiteSpace(dataSourceOverride))
+                {
+                    _options.WriteLog($"[DEBUG] Ignoring F00942 data source override '{dataSourceOverride}' (system table uses System - 920).");
+                }
+
+                var result = queryEngine.QueryTable("F00942", maxRows: 0, Array.Empty<JdeFilter>(), dataSourceOverride: null);
                 return MapPathCodes(result);
             }
             catch (Exception ex) when (ex is not JdeException)
@@ -1777,25 +1800,28 @@ public partial class JdeClient : IDisposable
 
     private JdeQueryResult QueryDataSourcesWithFallback(IJdeTableQueryEngine queryEngine, string? dataSourceOverride)
     {
-        JdeTableInfo tableInfo = queryEngine.GetTableInfo("F98611", null, null);
+        JdeTableInfo tableInfo = queryEngine.GetTableInfo("F98611", null, null, specDataSourceOverride: null, allowSpecDataSourceFallback: true);
         var candidates = new List<string?>();
-        if (!string.IsNullOrWhiteSpace(dataSourceOverride))
+        if (!string.IsNullOrWhiteSpace(dataSourceOverride) &&
+            _options.EnableDebug)
         {
-            candidates.Add(dataSourceOverride);
+            _options.WriteLog($"[DEBUG] Ignoring F98611 data source override '{dataSourceOverride}' (system table uses System - 920).");
         }
 
         var resolved = _dataSourceResolver.ResolveTableDataSource(_session.UserHandle, "F98611");
-        if (!string.IsNullOrWhiteSpace(resolved) && !candidates.Contains(resolved, StringComparer.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(resolved))
         {
             candidates.Add(resolved);
         }
-
-        if (!candidates.Contains("Object Librarian - 920", StringComparer.OrdinalIgnoreCase))
+        else
         {
-            candidates.Add("Object Librarian - 920");
+            candidates.Add("System - 920");
         }
 
-        candidates.Add(null);
+        if (!candidates.Contains(null))
+        {
+            candidates.Add(null);
+        }
 
         foreach (var candidate in candidates)
         {
@@ -1817,6 +1843,166 @@ public partial class JdeClient : IDisposable
         }
 
         return new JdeQueryResult { TableName = "F98611" };
+    }
+
+    private static string? NormalizeSpecSourceOverride(string? sourceOrPathCode)
+    {
+        if (string.IsNullOrWhiteSpace(sourceOrPathCode))
+        {
+            return null;
+        }
+
+        return sourceOrPathCode.Trim();
+    }
+
+    private string? ResolveTableSpecSourceOverride(
+        IJdeTableQueryEngine queryEngine,
+        string? sourceOrPathCode)
+    {
+        string? normalizedSource = NormalizeSpecSourceOverride(sourceOrPathCode);
+        if (string.IsNullOrWhiteSpace(normalizedSource))
+        {
+            return null;
+        }
+
+        string? pathCode = TryExtractPathCodeToken(normalizedSource);
+        if (string.IsNullOrWhiteSpace(pathCode))
+        {
+            return normalizedSource;
+        }
+
+        var filters = new List<JdeFilter>
+        {
+            new("EMPATHCD", pathCode, JdeFilterOperator.Equals)
+        };
+
+        JdeQueryResult pathCodeResult = queryEngine.QueryTable(
+            "F00942",
+            maxRows: 1,
+            filters,
+            dataSourceOverride: null);
+
+        string? resolved = ResolvePathCodeDataSource(
+            pathCodeResult,
+            pathCode,
+            preferDataDictionaryDataSource: false);
+
+        if (!string.IsNullOrWhiteSpace(resolved))
+        {
+            if (_options.EnableDebug &&
+                !string.Equals(resolved, normalizedSource, StringComparison.OrdinalIgnoreCase))
+            {
+                _options.WriteLog(
+                    $"[DEBUG] Resolved table spec source '{normalizedSource}' to '{resolved}' via F00942.");
+            }
+
+            return resolved;
+        }
+
+        if (_options.EnableDebug)
+        {
+            _options.WriteLog(
+                $"[DEBUG] Unable to resolve table spec source for '{normalizedSource}' from F00942; keeping explicit source.");
+        }
+
+        return normalizedSource;
+    }
+
+    internal static string? ResolvePathCodeDataSource(
+        JdeQueryResult? result,
+        string pathCode,
+        bool preferDataDictionaryDataSource)
+    {
+        if (result?.Rows == null || result.Rows.Count == 0 || string.IsNullOrWhiteSpace(pathCode))
+        {
+            return null;
+        }
+
+        foreach (var row in result.Rows)
+        {
+            string? currentPathCode = FindFirstValue(row, "EMPATHCD", "PATHCD", "PATHCODE");
+            if (string.IsNullOrWhiteSpace(currentPathCode) ||
+                !string.Equals(currentPathCode.Trim(), pathCode, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string? objectDataSource = FindFirstValue(row, "EMDATS", "OBJDATS", "OBDATS");
+            string? dataDictionaryDataSource = FindFirstValue(row, "DATS", "DDDATS");
+
+            if (preferDataDictionaryDataSource && !string.IsNullOrWhiteSpace(dataDictionaryDataSource))
+            {
+                return dataDictionaryDataSource.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(objectDataSource))
+            {
+                return objectDataSource.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(dataDictionaryDataSource))
+            {
+                return dataDictionaryDataSource.Trim();
+            }
+        }
+
+        return null;
+    }
+
+    internal static string? TryExtractPathCodeToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        string trimmed = value.Trim();
+        const string objectLibrarianPrefix = "Object Librarian - ";
+        const string centralObjectsPrefix = "Central Objects - ";
+        if (trimmed.StartsWith(objectLibrarianPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            string token = trimmed.Substring(objectLibrarianPrefix.Length).Trim();
+            return LooksLikePathCode(token) ? token : null;
+        }
+
+        if (trimmed.StartsWith(centralObjectsPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            string token = trimmed.Substring(centralObjectsPrefix.Length).Trim();
+            return LooksLikePathCode(token) ? token : null;
+        }
+
+        return LooksLikePathCode(trimmed) ? trimmed : null;
+    }
+
+    internal static bool LooksLikePathCode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        string token = value.Trim();
+        bool hasLetter = false;
+        bool hasDigit = false;
+        foreach (char ch in token)
+        {
+            if (char.IsLetter(ch))
+            {
+                hasLetter = true;
+                continue;
+            }
+
+            if (char.IsDigit(ch))
+            {
+                hasDigit = true;
+                continue;
+            }
+
+            return false;
+        }
+
+        bool isLocal = string.Equals(token, "LOCAL", StringComparison.OrdinalIgnoreCase);
+        return hasLetter && token.Length >= 4 && (hasDigit || isLocal);
     }
 
     internal static List<JdeDataSourceInfo> MapDataSources(JdeQueryResult result)
