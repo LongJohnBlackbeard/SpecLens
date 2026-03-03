@@ -364,8 +364,6 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
             }
 
             SelectedDataSource = _dataSources
-                .FirstOrDefault(ds => string.Equals(ds.Name, _objectLibrarianDataSourceOverride, StringComparison.OrdinalIgnoreCase))
-                ?? _dataSources
                 .FirstOrDefault(ds => string.Equals(ds.Name, defaultDataSource, StringComparison.OrdinalIgnoreCase))
                 ?? _dataSources.FirstOrDefault();
 

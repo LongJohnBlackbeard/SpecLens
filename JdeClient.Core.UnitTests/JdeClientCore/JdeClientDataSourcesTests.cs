@@ -20,7 +20,7 @@ public class JdeClientDataSourcesTests
         var tableFactory = Substitute.For<IJdeTableQueryEngineFactory>();
         tableFactory.Create(Arg.Any<JdeClientOptions>()).Returns(tableEngine);
 
-        tableEngine.GetTableInfo("F98611", null, null).Returns(new JdeTableInfo
+        tableEngine.GetTableInfo("F98611", null, null, null, true).Returns(new JdeTableInfo
         {
             TableName = "F98611",
             Columns = new List<JdeColumn> { new() { Name = "DATP" } }
@@ -114,7 +114,7 @@ public class JdeClientDataSourcesTests
                 "F00942",
                 0,
                 Arg.Is<IReadOnlyList<JdeFilter>>(filters => filters.Count == 0),
-                "JPY920",
+                null,
                 null)
             .Returns(queryResult);
 

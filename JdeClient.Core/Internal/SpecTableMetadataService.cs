@@ -29,7 +29,10 @@ internal sealed class SpecTableMetadataService : IDisposable
     /// <summary>
     /// Retrieve column metadata for a table.
     /// </summary>
-    public List<JdeColumn> GetColumns(string tableName)
+    public List<JdeColumn> GetColumns(
+        string tableName,
+        string? specDataSourceOverride = null,
+        bool allowSpecDataSourceFallback = true)
     {
         if (string.IsNullOrWhiteSpace(tableName))
         {
@@ -39,12 +42,7 @@ internal sealed class SpecTableMetadataService : IDisposable
         IntPtr tablePtr = IntPtr.Zero;
         try
         {
-            int result = JDBRS_GetTableSpecsByName(_hUser, tableName, out tablePtr, (char)1, IntPtr.Zero);
-            if (DebugEnabled)
-            {
-                _options.WriteLog($"[DEBUG] JDBRS_GetTableSpecsByName({tableName}) result={result}, tablePtr=0x{tablePtr.ToInt64():X}");
-            }
-            if (result != JDEDB_PASSED || tablePtr == IntPtr.Zero)
+            if (!TryGetTableSpecs(tableName, specDataSourceOverride, allowSpecDataSourceFallback, out tablePtr))
             {
                 return new List<JdeColumn>();
             }
@@ -71,7 +69,12 @@ internal sealed class SpecTableMetadataService : IDisposable
     /// <summary>
     /// Try to resolve the primary index and its key columns for a table.
     /// </summary>
-    public bool TryGetPrimaryIndex(string tableName, out int indexId, out List<string> keyColumns)
+    public bool TryGetPrimaryIndex(
+        string tableName,
+        out int indexId,
+        out List<string> keyColumns,
+        string? specDataSourceOverride = null,
+        bool allowSpecDataSourceFallback = true)
     {
         indexId = 0;
         keyColumns = new List<string>();
@@ -84,8 +87,7 @@ internal sealed class SpecTableMetadataService : IDisposable
         IntPtr tablePtr = IntPtr.Zero;
         try
         {
-            int result = JDBRS_GetTableSpecsByName(_hUser, tableName, out tablePtr, (char)1, IntPtr.Zero);
-            if (result != JDEDB_PASSED || tablePtr == IntPtr.Zero)
+            if (!TryGetTableSpecs(tableName, specDataSourceOverride, allowSpecDataSourceFallback, out tablePtr))
             {
                 return false;
             }
@@ -116,7 +118,10 @@ internal sealed class SpecTableMetadataService : IDisposable
     /// <summary>
     /// Retrieve index metadata for a table.
     /// </summary>
-    public List<JdeIndexInfo> GetIndexes(string tableName)
+    public List<JdeIndexInfo> GetIndexes(
+        string tableName,
+        string? specDataSourceOverride = null,
+        bool allowSpecDataSourceFallback = true)
     {
         var indexes = new List<JdeIndexInfo>();
 
@@ -128,8 +133,7 @@ internal sealed class SpecTableMetadataService : IDisposable
         IntPtr tablePtr = IntPtr.Zero;
         try
         {
-            int result = JDBRS_GetTableSpecsByName(_hUser, tableName, out tablePtr, (char)1, IntPtr.Zero);
-            if (result != JDEDB_PASSED || tablePtr == IntPtr.Zero)
+            if (!TryGetTableSpecs(tableName, specDataSourceOverride, allowSpecDataSourceFallback, out tablePtr))
             {
                 return indexes;
             }
@@ -155,6 +159,131 @@ internal sealed class SpecTableMetadataService : IDisposable
                 JDBRS_FreeTableSpecs(tablePtr);
             }
         }
+    }
+
+    private bool TryGetTableSpecs(
+        string tableName,
+        string? specDataSourceOverride,
+        bool allowSpecDataSourceFallback,
+        out IntPtr tablePtr)
+    {
+        tablePtr = IntPtr.Zero;
+        if (!string.IsNullOrWhiteSpace(specDataSourceOverride))
+        {
+            string requestedSource = NormalizeTableSpecOverrideSource(specDataSourceOverride);
+            if (DebugEnabled &&
+                !string.Equals(requestedSource, specDataSourceOverride.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                _options.WriteLog(
+                    $"[DEBUG] TableSpecs {tableName}: normalized override '{specDataSourceOverride}' to '{requestedSource}'.");
+            }
+            if (TryGetTableSpecsFromRequestHandle(tableName, requestedSource, out tablePtr))
+            {
+                return true;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(specDataSourceOverride))
+        {
+            if (DebugEnabled)
+            {
+                _options.WriteLog(
+                    $"[DEBUG] TableSpecs {tableName}: override '{specDataSourceOverride}' did not resolve; no runtime-default fallback is allowed when an explicit source is provided.");
+            }
+            return false;
+        }
+
+        int result = JDBRS_GetTableSpecsByName(_hUser, tableName, out tablePtr, (char)1, IntPtr.Zero);
+        if (DebugEnabled)
+        {
+            _options.WriteLog($"[DEBUG] JDBRS_GetTableSpecsByName({tableName}) result={result}, tablePtr=0x{tablePtr.ToInt64():X}");
+        }
+        return result == JDEDB_PASSED && tablePtr != IntPtr.Zero;
+    }
+
+    private static string NormalizeTableSpecOverrideSource(string source)
+    {
+        return source.Trim();
+    }
+
+    private bool TryGetTableSpecsFromRequestHandle(
+        string tableName,
+        string specDataSourceOverride,
+        out IntPtr tablePtr)
+    {
+        tablePtr = IntPtr.Zero;
+        HREQUEST hRequest = default;
+        try
+        {
+            int openResult = JDB_OpenTable(
+                _hUser,
+                new NID(tableName),
+                new ID(0),
+                IntPtr.Zero,
+                0,
+                specDataSourceOverride,
+                out hRequest);
+            if (DebugEnabled)
+            {
+                _options.WriteLog(
+                    $"[DEBUG] JDB_OpenTable({tableName}, specOverride='{specDataSourceOverride}') result={openResult}, handle=0x{hRequest.Handle:X}");
+            }
+
+            if (openResult != JDEDB_PASSED || !hRequest.IsValid)
+            {
+                return false;
+            }
+
+            int specResult = JDBRS_GetTableSpecsFromHandle(hRequest, out tablePtr);
+            if (DebugEnabled)
+            {
+                _options.WriteLog(
+                    $"[DEBUG] JDBRS_GetTableSpecsFromHandle({tableName}) result={specResult}, tablePtr=0x{tablePtr.ToInt64():X}");
+            }
+            return specResult == JDEDB_PASSED && tablePtr != IntPtr.Zero;
+        }
+        finally
+        {
+            if (hRequest.IsValid)
+            {
+                JDB_CloseTable(hRequest);
+            }
+        }
+    }
+
+    internal static List<string> BuildSpecOverrideCandidates(string source)
+    {
+        var candidates = new List<string>();
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return candidates;
+        }
+
+        string trimmed = source.Trim();
+        AddDistinct(candidates, trimmed);
+
+        string? pathCode = JdeClient.TryExtractPathCodeToken(trimmed);
+        if (!string.IsNullOrWhiteSpace(pathCode))
+        {
+            AddDistinct(candidates, pathCode);
+            AddDistinct(candidates, $"Central Objects - {pathCode}");
+            AddDistinct(candidates, $"Object Librarian - {pathCode}");
+        }
+
+        return candidates;
+    }
+
+    private static void AddDistinct(List<string> values, string candidate)
+    {
+        foreach (string value in values)
+        {
+            if (string.Equals(value, candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        values.Add(candidate);
     }
 
     private List<JdeColumn> ReadColumns(TableSpecHeader header, string tableName)

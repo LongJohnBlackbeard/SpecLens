@@ -1068,6 +1068,7 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
     {
         hSpec = IntPtr.Zero;
         bool includeResolvedDefaults = string.IsNullOrWhiteSpace(preferredDataSource);
+        bool hasExplicitSource = !includeResolvedDefaults;
         var candidates = BuildSpecDataSourceCandidates(
             tableName,
             fallbackTableName,
@@ -1076,6 +1077,14 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
         foreach (string? dataSource in candidates)
         {
             string resolved = dataSource ?? string.Empty;
+            if (hasExplicitSource && location == JdeSpecLocation.CentralObjects)
+            {
+                string? pathCode = TryExtractPathCode(resolved);
+                if (!string.IsNullOrWhiteSpace(pathCode))
+                {
+                    resolved = pathCode;
+                }
+            }
             ID? indexId = specType switch
             {
                 JdeSpecFileType.BusFunc => new ID(SpecKeyBusFuncByObject),
@@ -1089,7 +1098,7 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
                 return true;
             }
 
-            if (location == JdeSpecLocation.CentralObjects)
+            if (location == JdeSpecLocation.CentralObjects && includeResolvedDefaults)
             {
                 string? pathCode = TryExtractPathCode(resolved);
                 if (!string.IsNullOrWhiteSpace(pathCode) &&
@@ -1123,7 +1132,7 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
             }
         }
 
-        if (location == JdeSpecLocation.LocalUser)
+        if (location == JdeSpecLocation.LocalUser && includeResolvedDefaults)
         {
             if (specType == JdeSpecFileType.BusFunc || specType == JdeSpecFileType.Dstmpl)
             {
@@ -1560,7 +1569,8 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
             return false;
         }
 
-        return hasLetter && hasDigit && token.Length >= 4;
+        bool isLocal = string.Equals(token, "LOCAL", StringComparison.OrdinalIgnoreCase);
+        return hasLetter && token.Length >= 4 && (hasDigit || isLocal);
     }
 
     private bool TryOpenTable(

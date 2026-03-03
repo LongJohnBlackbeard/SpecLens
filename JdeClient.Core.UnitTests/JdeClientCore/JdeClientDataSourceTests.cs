@@ -8,7 +8,7 @@ namespace JdeClient.Core.UnitTests.JdeClientCore;
 public class JdeClientDataSourceTests
 {
     [Test]
-    public async Task GetAvailableDataSourcesAsync_UsesFallbackCandidates()
+    public async Task GetAvailableDataSourcesAsync_IgnoresOverrideForSystemTableAndUsesResolvedSource()
     {
         // Arrange
         var session = Substitute.For<IJdeSession>();
@@ -19,7 +19,7 @@ public class JdeClientDataSourceTests
         resolver.ResolveTableDataSource(Arg.Any<HUSER>(), "F98611").Returns("PrimaryDS");
 
         var engine = Substitute.For<IJdeTableQueryEngine>();
-        engine.GetTableInfo("F98611", null, null).Returns(new JdeTableInfo
+        engine.GetTableInfo("F98611", null, null, null, true).Returns(new JdeTableInfo
         {
             TableName = "F98611",
             Columns = new List<JdeColumn>
@@ -30,9 +30,6 @@ public class JdeClientDataSourceTests
                 new() { Name = "DBPATH" }
             }
         });
-
-        engine.StreamTableRows("F98611", 0, Arg.Any<IReadOnlyList<JdeFilter>>(), Arg.Any<IReadOnlyList<JdeColumn>>(), "OverrideDS", null, null, true, Arg.Any<CancellationToken>())
-            .Returns(Enumerable.Empty<Dictionary<string, object>>());
 
         engine.StreamTableRows("F98611", 0, Arg.Any<IReadOnlyList<JdeFilter>>(), Arg.Any<IReadOnlyList<JdeColumn>>(), "PrimaryDS", null, null, true, Arg.Any<CancellationToken>())
             .Returns(new[]
@@ -57,5 +54,7 @@ public class JdeClientDataSourceTests
         // Assert
         await Assert.That(result.Count).IsEqualTo(1);
         await Assert.That(result[0].Name).IsEqualTo("PrimaryDS");
+        engine.DidNotReceive()
+            .StreamTableRows("F98611", 0, Arg.Any<IReadOnlyList<JdeFilter>>(), Arg.Any<IReadOnlyList<JdeColumn>>(), "OverrideDS", null, null, true, Arg.Any<CancellationToken>());
     }
 }

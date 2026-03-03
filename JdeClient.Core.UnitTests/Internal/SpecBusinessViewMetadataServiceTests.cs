@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Runtime.InteropServices;
 using JdeClient.Core;
 using JdeClient.Core.Internal;
@@ -462,6 +463,174 @@ public class SpecBusinessViewMetadataServiceTests
             Marshal.FreeHGlobal(bobPtr);
             Marshal.FreeHGlobal(tablesPtr);
             Marshal.FreeHGlobal(headerPtr);
+        }
+    }
+
+    [Test]
+    public async Task ParseBusinessViewInfoFromXml_ParsesTablesColumnsAndJoins()
+    {
+        const string xml = """
+                           <BusinessView szView="V0101A" szDescription="Address Book View" szSystemCode="01">
+                             <table szTable="F0101" nNumInstances="1" idPrimaryIndex="3" />
+                             <column szTable="F0101" szDict="AN8" nSeq="1" idInstance="0" idEvType="9" idLength="8" nDecimals="0" nDispDecimals="0" cType="C" cClass="A" />
+                             <join szFTable="F0101" szFDict="AN8" idFInstance="0" szPTable="F0116" szPDict="AN8" idPInstance="0" chOperator="0" chType="1" />
+                           </BusinessView>
+                           """;
+
+        JdeBusinessViewInfo? info = SpecBusinessViewMetadataService.ParseBusinessViewInfoFromXml(xml, "FALLBACK");
+
+        await Assert.That(info).IsNotNull();
+        await Assert.That(info!.ViewName).IsEqualTo("V0101A");
+        await Assert.That(info.Description).IsEqualTo("Address Book View");
+        await Assert.That(info.SystemCode).IsEqualTo("01");
+        await Assert.That(info.Tables.Count).IsEqualTo(1);
+        await Assert.That(info.Columns.Count).IsEqualTo(1);
+        await Assert.That(info.Joins.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task BuildSpecSourceCandidates_ObjectLibrarian_AddsPathCodeCandidate()
+    {
+        List<string> candidates = SpecBusinessViewMetadataService.BuildSpecSourceCandidates("Object Librarian - PY920");
+
+        await Assert.That(candidates.Count).IsEqualTo(2);
+        await Assert.That(candidates[0]).IsEqualTo("Object Librarian - PY920");
+        await Assert.That(candidates[1]).IsEqualTo("PY920");
+    }
+
+    [Test]
+    public async Task BuildSpecSourceCandidates_ObjectLibrarianLocal_AddsPathCodeCandidate()
+    {
+        List<string> candidates = SpecBusinessViewMetadataService.BuildSpecSourceCandidates("Object Librarian - LOCAL");
+
+        await Assert.That(candidates.Count).IsEqualTo(2);
+        await Assert.That(candidates[0]).IsEqualTo("Object Librarian - LOCAL");
+        await Assert.That(candidates[1]).IsEqualTo("LOCAL");
+    }
+
+    [Test]
+    public async Task BuildSpecHandleOpenCandidates_PathCode_AddsFriendlyNames()
+    {
+        List<string> candidates = SpecBusinessViewMetadataService.BuildSpecHandleOpenCandidates("PY920").ToList();
+
+        await Assert.That(candidates.Contains("PY920")).IsTrue();
+        await Assert.That(candidates.Contains("Central Objects - PY920")).IsTrue();
+        await Assert.That(candidates.Contains("Object Librarian - PY920")).IsTrue();
+    }
+
+    [Test]
+    public async Task TryParsePackedBusinessViewSpec_ValidBuffer_ParsesMetadata()
+    {
+        int headerSize = Marshal.SizeOf<BOB_HEADER>();
+        int tableSize = Marshal.SizeOf<BOB_TABLE>();
+        int columnSize = Marshal.SizeOf<BOB_COLUMN>();
+        int joinSize = Marshal.SizeOf<BOB_JOIN>();
+        int totalSize = headerSize + tableSize + columnSize + joinSize;
+        IntPtr buffer = Marshal.AllocHGlobal(totalSize);
+        try
+        {
+            var header = new BOB_HEADER
+            {
+                lVarLen = new LVARLEN { Value = (uint)totalSize },
+                idFormatNum = new ID(1),
+                szView = new NID("V0101A"),
+                szDescription = "Address Book View",
+                nTableCount = 1,
+                nPrimaryKeyColumnCount = 0,
+                nColumnCount = 1,
+                nJoinCount = 1,
+                szSystemCode = "01",
+                szBusinessViewUse = string.Empty,
+                idStyle = new ID(0),
+                nType = 0,
+                szTable = new NID("F0101"),
+                nativeAlignmentPadding = IntPtr.Zero
+            };
+            Marshal.StructureToPtr(header, buffer, false);
+
+            IntPtr tablePtr = IntPtr.Add(buffer, headerSize);
+            var table = new BOB_TABLE
+            {
+                idFormatNum = new ID(1),
+                idPrimaryIndex = new ID(3),
+                nNumInstances = 1,
+                szTable = new NID("F0101"),
+                nativeAlignmentPadding = IntPtr.Zero
+            };
+            Marshal.StructureToPtr(table, tablePtr, false);
+
+            IntPtr columnPtr = IntPtr.Add(tablePtr, tableSize);
+            var column = new BOB_COLUMN
+            {
+                idFormatNum = new ID(1),
+                idInstance = new ID(0),
+                iFlags = 0,
+                nSeq = 1,
+                cType = 'C',
+                idEvType = new ID(9),
+                cClass = 'A',
+                idLength = new ID(8),
+                nDecimals = 0,
+                nDispDecimals = 0,
+                idHelpText = new ID(0),
+                szTable = new NID("F0101"),
+                szDict = new NID("AN8"),
+                nativeAlignmentPadding = IntPtr.Zero
+            };
+            Marshal.StructureToPtr(column, columnPtr, false);
+
+            IntPtr joinPtr = IntPtr.Add(columnPtr, columnSize);
+            var join = new BOB_JOIN
+            {
+                idFormatNum = new ID(1),
+                idFInstance = new ID(0),
+                idPInstance = new ID(0),
+                chOperator = 0,
+                chType = 1,
+                szFTable = new NID("F0101"),
+                szFDict = new NID("AN8"),
+                szPTable = new NID("F0116"),
+                szPDict = new NID("AN8"),
+                nativeAlignmentPadding = IntPtr.Zero
+            };
+            Marshal.StructureToPtr(join, joinPtr, false);
+
+            JdeBusinessViewInfo? info = SpecBusinessViewMetadataService.TryParsePackedBusinessViewSpec(buffer, (uint)totalSize, "FALLBACK");
+
+            await Assert.That(info).IsNotNull();
+            await Assert.That(info!.ViewName).IsEqualTo("V0101A");
+            await Assert.That(info.Tables.Count).IsEqualTo(1);
+            await Assert.That(info.Columns.Count).IsEqualTo(1);
+            await Assert.That(info.Joins.Count).IsEqualTo(1);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    [Test]
+    public async Task TryParsePackedBusinessViewSpec_InvalidLength_ReturnsNull()
+    {
+        int headerSize = Marshal.SizeOf<BOB_HEADER>();
+        IntPtr buffer = Marshal.AllocHGlobal(headerSize);
+        try
+        {
+            var header = new BOB_HEADER
+            {
+                lVarLen = new LVARLEN { Value = 8 },
+                idFormatNum = new ID(1),
+                szView = new NID("V0101A"),
+                nTableCount = 1
+            };
+            Marshal.StructureToPtr(header, buffer, false);
+
+            JdeBusinessViewInfo? info = SpecBusinessViewMetadataService.TryParsePackedBusinessViewSpec(buffer, 8, "FALLBACK");
+            await Assert.That(info).IsNull();
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
         }
     }
 }

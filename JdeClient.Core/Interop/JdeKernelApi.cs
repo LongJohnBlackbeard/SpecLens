@@ -372,6 +372,10 @@ public static class JdeKernelApi
         char bUseCache,
         IntPtr reserved);
     [DllImport(DllName, CallingConvention = CallingConvention.StdCall)]
+    public static extern int JDBRS_GetTableSpecsFromHandle(
+        HREQUEST hRequest,
+        out IntPtr lpTableCache);
+    [DllImport(DllName, CallingConvention = CallingConvention.StdCall)]
     public static extern int JDBRS_FreeTableSpecs(
         IntPtr lpTableCache);
     [DllImport(DllName, CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Unicode)]

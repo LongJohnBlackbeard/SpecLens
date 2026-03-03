@@ -503,13 +503,13 @@ public class JdeClientTests
         var tableFactory = Substitute.For<IJdeTableQueryEngineFactory>();
         tableFactory.Create(Arg.Any<JdeClientOptions>()).Returns(tableEngine);
 
-        tableEngine.GetTableInfo("F0101", null, null).Returns(new JdeTableInfo
+        tableEngine.GetTableInfo("F0101", null, null, null, true).Returns(new JdeTableInfo
         {
             TableName = "F0101",
             Columns = new List<JdeColumn>()
         });
 
-        f9860Engine.GetObjectByName("F0101", JdeObjectType.Table).Returns(new JdeObjectInfo
+        f9860Engine.GetObjectByName("F0101", JdeObjectType.Table, null, true).Returns(new JdeObjectInfo
         {
             ObjectName = "F0101",
             ObjectType = "TBLE",
@@ -531,7 +531,7 @@ public class JdeClientTests
     }
 
     [Test]
-    public async Task JdeClient_GetTableInfoAsync_WithOverride_PassesObjectLibrarianParameters()
+    public async Task JdeClient_GetTableInfoAsync_WithOverride_DoesNotOverrideF9860Lookup()
     {
         // Arrange
         var session = Substitute.For<IJdeSession>();
@@ -555,7 +555,26 @@ public class JdeClientTests
         var tableFactory = Substitute.For<IJdeTableQueryEngineFactory>();
         tableFactory.Create(Arg.Any<JdeClientOptions>()).Returns(tableEngine);
 
-        tableEngine.GetTableInfo("F0101", null, null).Returns(new JdeTableInfo
+        tableEngine.QueryTable(
+                "F00942",
+                1,
+                Arg.Any<IReadOnlyList<JdeFilter>>(),
+                null,
+                null)
+            .Returns(new JdeQueryResult
+            {
+                TableName = "F00942",
+                Rows =
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["EMPATHCD"] = "PY920",
+                        ["EMDATS"] = "Central Objects - PY920"
+                    }
+                }
+            });
+
+        tableEngine.GetTableInfo("F0101", null, null, "Central Objects - PY920", false).Returns(new JdeTableInfo
         {
             TableName = "F0101",
             Columns = new List<JdeColumn>()
@@ -564,8 +583,8 @@ public class JdeClientTests
         f9860Engine.GetObjectByName(
                 "F0101",
                 JdeObjectType.Table,
-                "Object Librarian - PY920",
-                false)
+                null,
+                true)
             .Returns(new JdeObjectInfo
             {
                 ObjectName = "F0101",
@@ -587,7 +606,7 @@ public class JdeClientTests
     }
 
     [Test]
-    public async Task JdeClient_GetBusinessViewInfoAsync_WithOverride_PassesObjectLibrarianParameters()
+    public async Task JdeClient_GetBusinessViewInfoAsync_WithOverride_DoesNotOverrideF9860Lookup()
     {
         // Arrange
         var session = Substitute.For<IJdeSession>();
@@ -611,7 +630,7 @@ public class JdeClientTests
         var tableFactory = Substitute.For<IJdeTableQueryEngineFactory>();
         tableFactory.Create(Arg.Any<JdeClientOptions>()).Returns(tableEngine);
 
-        tableEngine.GetBusinessViewInfo("V0101A").Returns(new JdeBusinessViewInfo
+        tableEngine.GetBusinessViewInfo("V0101A", "Object Librarian - PY920", false).Returns(new JdeBusinessViewInfo
         {
             ViewName = "V0101A"
         });
@@ -619,8 +638,8 @@ public class JdeClientTests
         f9860Engine.GetObjectByName(
                 "V0101A",
                 JdeObjectType.BusinessView,
-                "Object Librarian - PY920",
-                false)
+                null,
+                true)
             .Returns(new JdeObjectInfo
             {
                 ObjectName = "V0101A",
@@ -641,6 +660,138 @@ public class JdeClientTests
         await Assert.That(result is not null).IsTrue();
         await Assert.That(result!.Description).IsEqualTo("Address Book View");
         await Assert.That(result.SystemCode).IsEqualTo("01");
+    }
+
+    [Test]
+    public async Task JdeClient_GetBusinessViewInfoAsync_WithPathCodeSource_PreservesOverrideToken()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        var f9860Engine = Substitute.For<IF9860QueryEngine>();
+        session.QueryEngine.Returns(f9860Engine);
+        session.ExecuteAsync(Arg.Any<Func<JdeBusinessViewInfo?>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var action = callInfo.Arg<Func<JdeBusinessViewInfo?>>();
+                try
+                {
+                    return Task.FromResult(action());
+                }
+                catch (Exception ex)
+                {
+                    return Task.FromException<JdeBusinessViewInfo?>(ex);
+                }
+            });
+
+        var tableEngine = Substitute.For<IJdeTableQueryEngine>();
+        var tableFactory = Substitute.For<IJdeTableQueryEngineFactory>();
+        tableFactory.Create(Arg.Any<JdeClientOptions>()).Returns(tableEngine);
+
+        tableEngine.GetBusinessViewInfo("V0101A", "Object Librarian - PY920", false).Returns(new JdeBusinessViewInfo
+        {
+            ViewName = "V0101A"
+        });
+
+        f9860Engine.GetObjectByName(
+                "V0101A",
+                JdeObjectType.BusinessView,
+                null,
+                true)
+            .Returns(new JdeObjectInfo
+            {
+                ObjectName = "V0101A",
+                ObjectType = "BSVW",
+                Description = "Address Book View",
+                SystemCode = "01"
+            });
+
+        var client = new JdeClient(session, new JdeClientOptions(), tableFactory);
+
+        // Act
+        var result = await client.GetBusinessViewInfoAsync(
+            "V0101A",
+            objectLibrarianDataSourceOverride: "Object Librarian - PY920",
+            allowObjectLibrarianFallback: false);
+
+        // Assert
+        await Assert.That(result is not null).IsTrue();
+        tableEngine.DidNotReceive().QueryTable("F00942", 1, Arg.Any<IReadOnlyList<JdeFilter>>(), null, null);
+    }
+
+    [Test]
+    public async Task JdeClient_GetTableInfoAsync_WithPathCodeOverride_ResolvesFromF00942()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        var f9860Engine = Substitute.For<IF9860QueryEngine>();
+        session.QueryEngine.Returns(f9860Engine);
+        session.ExecuteAsync(Arg.Any<Func<JdeTableInfo?>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var action = callInfo.Arg<Func<JdeTableInfo?>>();
+                try
+                {
+                    return Task.FromResult(action());
+                }
+                catch (Exception ex)
+                {
+                    return Task.FromException<JdeTableInfo?>(ex);
+                }
+            });
+
+        var tableEngine = Substitute.For<IJdeTableQueryEngine>();
+        var tableFactory = Substitute.For<IJdeTableQueryEngineFactory>();
+        tableFactory.Create(Arg.Any<JdeClientOptions>()).Returns(tableEngine);
+
+        tableEngine.QueryTable(
+                "F00942",
+                1,
+                Arg.Any<IReadOnlyList<JdeFilter>>(),
+                null,
+                null)
+            .Returns(new JdeQueryResult
+            {
+                TableName = "F00942",
+                Rows =
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["EMPATHCD"] = "PY920",
+                        ["EMDATS"] = "Central Objects - PY920"
+                    }
+                }
+            });
+
+        tableEngine.GetTableInfo("F0101", null, null, "Central Objects - PY920", false).Returns(new JdeTableInfo
+        {
+            TableName = "F0101",
+            Columns = new List<JdeColumn>()
+        });
+
+        f9860Engine.GetObjectByName(
+                "F0101",
+                JdeObjectType.Table,
+                null,
+                true)
+            .Returns(new JdeObjectInfo
+            {
+                ObjectName = "F0101",
+                ObjectType = "TBLE",
+                Description = "Address Book Master"
+            });
+
+        var client = new JdeClient(session, new JdeClientOptions(), tableFactory);
+
+        // Act
+        var result = await client.GetTableInfoAsync(
+            "F0101",
+            objectLibrarianDataSourceOverride: "PY920",
+            allowObjectLibrarianFallback: false);
+
+        // Assert
+        await Assert.That(result is not null).IsTrue();
+        await Assert.That(result!.Description).IsEqualTo("Address Book Master");
+        tableEngine.Received(1).QueryTable("F00942", 1, Arg.Any<IReadOnlyList<JdeFilter>>(), null, null);
     }
 
     [Test]

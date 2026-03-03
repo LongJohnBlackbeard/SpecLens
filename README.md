@@ -3,8 +3,7 @@
 [![CI](https://github.com/LongJohnBlackbeard/SpecLens/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/LongJohnBlackbeard/SpecLens/actions/workflows/ci.yml) [![CodeQL](https://github.com/LongJohnBlackbeard/SpecLens/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/LongJohnBlackbeard/SpecLens/actions/workflows/codeql.yml) [![Dependency Review](https://github.com/LongJohnBlackbeard/SpecLens/actions/workflows/dependency-review.yml/badge.svg?event=pull_request)](https://github.com/LongJohnBlackbeard/SpecLens/actions/workflows/dependency-review.yml) [![Release](https://img.shields.io/github/v/release/LongJohnBlackbeard/SpecLens?sort=semver)](https://github.com/LongJohnBlackbeard/SpecLens/releases) [![codecov](https://codecov.io/gh/LongJohnBlackbeard/SpecLens/branch/main/graph/badge.svg)](https://codecov.io/gh/LongJohnBlackbeard/SpecLens)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-Spec Lens is a .NET solution for working with JDE objects and specifications through the native JDE C APIs. This 
-repository is private for now.
+Spec Lens is a .NET solution for working with JDE objects and specifications through the native JDE C APIs.
 
 The repo includes a reusable client library, test harnesses, and a desktop UI. The packaged application is 
 distributed through releases today; in the future, it could be installed and updated via an installer or a similar deployment method.

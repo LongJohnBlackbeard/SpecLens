@@ -129,7 +129,24 @@ var tableInfo = await client.GetTableInfoAsync("F0101");
 var tableIndexes = await client.GetTableIndexesAsync("F0101");
 
 var viewInfo = await client.GetBusinessViewInfoAsync("V0101A");
+
+// Explicit spec source overrides
+var tableInfoPy920 = await client.GetTableInfoAsync(
+    "F0101",
+    objectLibrarianDataSourceOverride: "PY920",
+    allowObjectLibrarianFallback: false);
+
+var viewInfoPy920 = await client.GetBusinessViewInfoAsync(
+    "V0101A",
+    objectLibrarianDataSourceOverride: "Object Librarian - PY920",
+    allowObjectLibrarianFallback: false);
 ```
+
+Notes:
+
+- Table spec path-code overrides are resolved through `F00942` (`EMPATHCD -> EMDATS/DATS`).
+- Business view spec overrides are passed directly to spec-open APIs (path code or source string).
+- If an explicit spec source is provided and unavailable, calls return no result (no runtime-default fallback).
 
 ### Query Patterns
 
@@ -227,11 +244,19 @@ foreach (var project in projects)
 }
 ```
 
-### Data Source Overrides
+### Path Code vs Data Source
 
-Most table queries accept a `dataSourceOverride`. Use this to target an environment (for example, `JPY920`).
-Path code (for example, `PY920`) is a separate concept and should be used only when it reflects the target
-environment in F98222.
+Use the two concepts separately:
+
+- `dataSourceOverride` controls where table/view **data rows** are read from (query APIs).
+- `objectLibrarianDataSourceOverride` controls where **spec metadata** is read from (table/view spec APIs).
+
+Current behavior:
+
+- `F9860`, `F98611`, and `F00942` are treated as system tables; overrides are ignored and system resolution is used.
+- `GetAvailablePathCodesAsync()` always queries `F00942` using system context.
+- `GetAvailableDataSourcesAsync()` always queries `F98611` using system context.
+- Query APIs only apply open fallback when no explicit `dataSourceOverride` is provided.
 
 ### Wildcards
 
@@ -291,6 +316,32 @@ Task<List<JdeObjectInfo>> GetObjectsAsync(
 // Get table information
 Task<JdeTableInfo?> GetTableInfoAsync(
     string tableName,
+    CancellationToken cancellationToken = default)
+
+Task<JdeTableInfo?> GetTableInfoAsync(
+    string tableName,
+    string? objectLibrarianDataSourceOverride,
+    bool allowObjectLibrarianFallback = true,
+    CancellationToken cancellationToken = default)
+
+Task<JdeBusinessViewInfo?> GetBusinessViewInfoAsync(
+    string viewName,
+    CancellationToken cancellationToken = default)
+
+Task<JdeBusinessViewInfo?> GetBusinessViewInfoAsync(
+    string viewName,
+    string? objectLibrarianDataSourceOverride,
+    bool allowObjectLibrarianFallback = true,
+    CancellationToken cancellationToken = default)
+
+Task<List<JdeIndexInfo>> GetTableIndexesAsync(
+    string tableName,
+    CancellationToken cancellationToken = default)
+
+Task<List<JdeIndexInfo>> GetTableIndexesAsync(
+    string tableName,
+    string? objectLibrarianDataSourceOverride,
+    bool allowObjectLibrarianFallback = true,
     CancellationToken cancellationToken = default)
 ```
 
