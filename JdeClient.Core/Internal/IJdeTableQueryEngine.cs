@@ -28,7 +28,7 @@ internal interface IJdeTableQueryEngine : IDisposable
     /// <summary>
     /// Stream rows from a table without buffering the full result set.
     /// </summary>
-    IEnumerable<Dictionary<string, object>> StreamTableRows(
+    IEnumerable<JdeRow> StreamTableRows(
         string tableName,
         int maxRows,
         IReadOnlyList<JdeFilter> filters,
@@ -42,7 +42,7 @@ internal interface IJdeTableQueryEngine : IDisposable
     /// <summary>
     /// Stream rows from a business view without buffering the full result set.
     /// </summary>
-    IEnumerable<Dictionary<string, object>> StreamViewRows(
+    IEnumerable<JdeRow> StreamViewRows(
         string viewName,
         int maxRows,
         IReadOnlyList<JdeFilter> filters,

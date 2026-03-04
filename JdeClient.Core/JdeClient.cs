@@ -1139,7 +1139,7 @@ public partial class JdeClient : IDisposable
             var columns = tableInfo.Columns;
             var columnNames = columns.Select(column => column.Name).ToList();
             var safeFilters = filters ?? Array.Empty<JdeFilter>();
-            var rowQueue = new BlockingCollection<Dictionary<string, object>>();
+            var rowQueue = new BlockingCollection<JdeRow>();
             Exception? streamError = null;
             object errorLock = new();
 
@@ -1172,7 +1172,7 @@ public partial class JdeClient : IDisposable
                 return true;
             }, cancellationToken);
 
-            IEnumerable<Dictionary<string, object>> Enumerate()
+            IEnumerable<JdeRow> Enumerate()
             {
                 foreach (var row in rowQueue.GetConsumingEnumerable(cancellationToken))
                 {
@@ -1233,7 +1233,7 @@ public partial class JdeClient : IDisposable
 
             var columnNames = columns.Select(column => column.Name).ToList();
             var safeFilters = filters ?? Array.Empty<JdeFilter>();
-            var rowQueue = new BlockingCollection<Dictionary<string, object>>();
+            var rowQueue = new BlockingCollection<JdeRow>();
             Exception? streamError = null;
             object errorLock = new();
 
@@ -1267,7 +1267,7 @@ public partial class JdeClient : IDisposable
                 return true;
             }, cancellationToken);
 
-            IEnumerable<Dictionary<string, object>> Enumerate()
+            IEnumerable<JdeRow> Enumerate()
             {
                 foreach (var row in rowQueue.GetConsumingEnumerable(cancellationToken))
                 {
@@ -1834,7 +1834,7 @@ public partial class JdeClient : IDisposable
 
         foreach (var candidate in candidates)
         {
-            var rows = new List<Dictionary<string, object>>();
+            var rows = new List<JdeRow>();
             foreach (var row in queryEngine.StreamTableRows("F98611", maxRows: 0, Array.Empty<JdeFilter>(), tableInfo.Columns, candidate, sorts: null, indexId: null, allowDataSourceFallback: true, cancellationToken: CancellationToken.None))
             {
                 rows.Add(row);
@@ -2181,7 +2181,7 @@ public partial class JdeClient : IDisposable
         return results;
     }
 
-    internal static string? FindFirstValue(Dictionary<string, object> row, params string[] candidates)
+    internal static string? FindFirstValue(IReadOnlyDictionary<string, string> row, params string[] candidates)
     {
         foreach (var candidate in candidates)
         {

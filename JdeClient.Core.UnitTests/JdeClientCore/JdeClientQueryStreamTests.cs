@@ -32,7 +32,7 @@ public class JdeClientQueryStreamTests
 
         var rows = new[]
         {
-            new Dictionary<string, object> { ["AN8"] = 1, ["ALPH"] = "Alpha" }
+            new JdeRow { ["AN8"] = "1", ["ALPH"] = "Alpha" }
         };
 
         engine.StreamTableRows(
@@ -152,7 +152,7 @@ public class JdeClientQueryStreamTests
                 Arg.Any<CancellationToken>())
             .Returns(new[]
             {
-                new Dictionary<string, object> { ["ALPH"] = "Alpha" }
+                new JdeRow { ["ALPH"] = "Alpha" }
             });
 
         var client = new JdeClient(session, new JdeClientOptions(), factory);

@@ -149,7 +149,7 @@ public class JdeClientStaticHelpersTests
     [Test]
     public async Task FindFirstValue_ExactMatch_ReturnsTrimmed()
     {
-        var row = new Dictionary<string, object>
+        var row = new JdeRow
         {
             ["OMWPRJID"] = "  PRJ1  "
         };
@@ -162,7 +162,7 @@ public class JdeClientStaticHelpersTests
     [Test]
     public async Task FindFirstValue_NoMatch_ReturnsNull()
     {
-        var row = new Dictionary<string, object>
+        var row = new JdeRow
         {
             ["OTHER"] = "VAL"
         };
@@ -175,7 +175,7 @@ public class JdeClientStaticHelpersTests
     [Test]
     public async Task FindFirstValue_SubstringFallback_ReturnsValue()
     {
-        var row = new Dictionary<string, object>
+        var row = new JdeRow
         {
             ["PROJECT_NAME"] = "PRJ2"
         };
@@ -188,7 +188,7 @@ public class JdeClientStaticHelpersTests
     [Test]
     public async Task FindFirstValue_WhitespaceValue_SkipsToNextCandidate()
     {
-        var row = new Dictionary<string, object>
+        var row = new JdeRow
         {
             ["OMWPRJID"] = "   ",
             ["PROJECT_NAME"] = "PRJ3"
@@ -255,7 +255,7 @@ public class JdeClientStaticHelpersTests
     {
         var result = new JdeQueryResult
         {
-            Rows = new List<Dictionary<string, object>>
+            Rows = new List<JdeRow>
             {
                 new() { ["OMWPRJID"] = "BETA", ["OMWDESC"] = "Second" },
                 new() { ["OMWPRJID"] = " ALPHA ", ["OMWPS"] = "28" },
@@ -275,7 +275,7 @@ public class JdeClientStaticHelpersTests
     {
         var result = new JdeQueryResult
         {
-            Rows = new List<Dictionary<string, object>>
+            Rows = new List<JdeRow>
             {
                 new()
                 {
@@ -307,7 +307,7 @@ public class JdeClientStaticHelpersTests
     {
         var result = new JdeQueryResult
         {
-            Rows = new List<Dictionary<string, object>>
+            Rows = new List<JdeRow>
             {
                 new()
                 {
@@ -340,7 +340,7 @@ public class JdeClientStaticHelpersTests
     {
         var result = new JdeQueryResult
         {
-            Rows = new List<Dictionary<string, object>>
+            Rows = new List<JdeRow>
             {
                 new() { ["EMPATHCD"] = " PY920 " },
                 new() { ["PATHCD"] = "DV920" },
@@ -361,7 +361,7 @@ public class JdeClientStaticHelpersTests
     {
         var result = new JdeQueryResult
         {
-            Rows = new List<Dictionary<string, object>>
+            Rows = new List<JdeRow>
             {
                 new()
                 {
@@ -382,7 +382,7 @@ public class JdeClientStaticHelpersTests
     {
         var result = new JdeQueryResult
         {
-            Rows = new List<Dictionary<string, object>>
+            Rows = new List<JdeRow>
             {
                 new()
                 {
@@ -403,7 +403,7 @@ public class JdeClientStaticHelpersTests
     {
         var result = new JdeQueryResult
         {
-            Rows = new List<Dictionary<string, object>>
+            Rows = new List<JdeRow>
             {
                 new()
                 {
@@ -465,7 +465,7 @@ public class JdeClientStaticHelpersTests
     {
         var result = new JdeQueryResult
         {
-            Rows = new List<Dictionary<string, object>>
+            Rows = new List<JdeRow>
             {
                 new()
                 {
@@ -489,7 +489,7 @@ public class JdeClientStaticHelpersTests
     {
         var result = new JdeQueryResult
         {
-            Rows = new List<Dictionary<string, object>>
+            Rows = new List<JdeRow>
             {
                 new()
                 {
@@ -517,7 +517,7 @@ public class JdeClientStaticHelpersTests
     {
         var result = new JdeQueryResult
         {
-            Rows = new List<Dictionary<string, object>>
+            Rows = new List<JdeRow>
             {
                 new()
                 {

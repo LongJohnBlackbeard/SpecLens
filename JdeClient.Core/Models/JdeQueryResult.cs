@@ -3,7 +3,7 @@ namespace JdeClient.Core.Models;
 /// <summary>
 /// Represents the result of a JDE table query
 /// </summary>
-public class                                                                                                                                                                                  JdeQueryResult
+public class JdeQueryResult
 {
     /// <summary>
     /// Table name that was queried
@@ -12,9 +12,9 @@ public class                                                                    
 
     /// <summary>
     /// List of rows returned
-    /// Each row is a dictionary of column name → value
+    /// Each row is a typed container of column name → string value
     /// </summary>
-    public List<Dictionary<string, object>> Rows { get; set; } = new();
+    public List<JdeRow> Rows { get; set; } = new();
 
     /// <summary>
     /// Column names in result set

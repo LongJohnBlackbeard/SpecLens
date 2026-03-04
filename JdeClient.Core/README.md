@@ -163,11 +163,16 @@ var rows = await client.QueryTableAsync("F0101", filters, maxRows: 100);
 
 // Streamed query for large result sets
 var stream = client.QueryTableStream("F0101", maxRows: 0);
-foreach (var row in stream.Rows)
+foreach (var row in stream)
 {
-    // process row
+    Console.WriteLine($"{row["AN8"]} | {row["ALPH"]}");
 }
 ```
+
+Notes:
+
+- Query rows are returned as `JdeRow` (`IReadOnlyDictionary<string, string>`) with case-insensitive column keys.
+- Values are normalized to strings for consistent row consumption across table and business-view queries.
 
 ### Data Dictionary Workflow
 
@@ -563,6 +568,18 @@ public class JdeColumn
 }
 ```
 
+#### JdeRow
+
+```csharp
+public sealed class JdeRow : IReadOnlyDictionary<string, string>
+{
+    public string this[string key] { get; set; }
+    public IEnumerable<string> Keys { get; }
+    public IEnumerable<string> Values { get; }
+    public int Count { get; }
+}
+```
+
 ### Exceptions
 
 All exceptions inherit from `JdeException`:
@@ -637,7 +654,7 @@ jdekrnl.dll (JDE Native APIs)
 
 **Public Surface:**
 - `JdeClient` - Main API
-- `JdeObjectInfo`, `JdeTableInfo`, etc. - Models
+- `JdeObjectInfo`, `JdeTableInfo`, `JdeQueryResult`, `JdeQueryStream`, `JdeRow`, etc. - Models
 - `JdeException` and subclasses - Exceptions
 
 **Internal (not exposed):**

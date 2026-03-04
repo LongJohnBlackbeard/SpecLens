@@ -566,7 +566,7 @@ public class JdeClientTests
                 TableName = "F00942",
                 Rows =
                 {
-                    new Dictionary<string, object>
+                    new JdeRow
                     {
                         ["EMPATHCD"] = "PY920",
                         ["EMDATS"] = "Central Objects - PY920"
@@ -754,7 +754,7 @@ public class JdeClientTests
                 TableName = "F00942",
                 Rows =
                 {
-                    new Dictionary<string, object>
+                    new JdeRow
                     {
                         ["EMPATHCD"] = "PY920",
                         ["EMDATS"] = "Central Objects - PY920"

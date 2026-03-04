@@ -483,7 +483,7 @@ class Program
                 allowDataSourceFallback: location.AllowFallback,
                 cancellationToken: CancellationToken.None);
             int rowCount = 0;
-            List<Dictionary<string, object>> previewRows = new();
+            List<JdeRow> previewRows = new();
 
             foreach (var row in stream)
             {
@@ -539,7 +539,7 @@ class Program
                 allowDataSourceFallback: location.AllowFallback,
                 cancellationToken: CancellationToken.None);
             int rowCount = 0;
-            List<Dictionary<string, object>> previewRows = new();
+            List<JdeRow> previewRows = new();
 
             foreach (var row in stream)
             {

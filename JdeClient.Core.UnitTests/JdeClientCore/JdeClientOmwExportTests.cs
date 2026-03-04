@@ -31,7 +31,7 @@ public class JdeClientOmwExportTests
             .Returns(new JdeQueryResult
             {
                 TableName = "F00942",
-                Rows = new List<Dictionary<string, object>>
+                Rows = new List<JdeRow>
                 {
                     new() { ["EMRLS"] = "E920" }
                 }
@@ -107,7 +107,7 @@ public class JdeClientOmwExportTests
             .Returns(new JdeQueryResult
             {
                 TableName = "F00942",
-                Rows = new List<Dictionary<string, object>>
+                Rows = new List<JdeRow>
                 {
                     new() { ["EMRLS"] = "E920" }
                 }
@@ -193,7 +193,7 @@ public class JdeClientOmwExportTests
             .Returns(new JdeQueryResult
             {
                 TableName = "F00942",
-                Rows = new List<Dictionary<string, object>>
+                Rows = new List<JdeRow>
                 {
                     new() { ["EMRLS"] = "E920" }
                 }
@@ -249,7 +249,7 @@ public class JdeClientOmwExportTests
             .Returns(new JdeQueryResult
             {
                 TableName = "F00942",
-                Rows = new List<Dictionary<string, object>>
+                Rows = new List<JdeRow>
                 {
                     new() { ["EMRLS"] = "E920" }
                 }
@@ -315,7 +315,7 @@ public class JdeClientOmwExportTests
             .Returns(new JdeQueryResult
             {
                 TableName = "F00942",
-                Rows = new List<Dictionary<string, object>>
+                Rows = new List<JdeRow>
                 {
                     new() { ["EMRLS"] = "E920" }
                 }

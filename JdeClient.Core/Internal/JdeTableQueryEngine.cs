@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Runtime.InteropServices;
 using System.Linq;
+using System.Globalization;
 using JdeClient.Core.Exceptions;
 using JdeClient.Core;
 using JdeClient.Core.Interop;
@@ -163,11 +164,11 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
 
                 // Skip ProcessFetchedRecord; it is unstable in this query path.
 
-                var row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                var row = new JdeRow();
                 foreach (var column in columns)
                 {
                     object? value = ReadValueFromColumns(hRequest, tableName, column);
-                    row[column.Name] = value ?? string.Empty;
+                    row[column.Name] = ToRowText(value);
                 }
 
                 result.Rows.Add(row);
@@ -276,7 +277,7 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
     }
 
     /// <inheritdoc />
-    public IEnumerable<Dictionary<string, object>> StreamTableRows(
+    public IEnumerable<JdeRow> StreamTableRows(
         string tableName,
         int maxRows,
         IReadOnlyList<JdeFilter> filters,
@@ -376,11 +377,11 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
 
                 // Skip ProcessFetchedRecord for streaming; layout-based reads avoid it.
 
-                var row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                var row = new JdeRow();
                 foreach (var column in resolvedColumns)
                 {
                     object? value = ReadValueFromColumns(hRequest, tableName, column);
-                    row[column.Name] = value ?? string.Empty;
+                    row[column.Name] = ToRowText(value);
                 }
 
                 yield return row;
@@ -402,7 +403,7 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
     }
 
     /// <inheritdoc />
-    public IEnumerable<Dictionary<string, object>> StreamViewRows(
+    public IEnumerable<JdeRow> StreamViewRows(
         string viewName,
         int maxRows,
         IReadOnlyList<JdeFilter> filters,
@@ -493,11 +494,11 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
                     throw new JdeTableException(viewName, "JDB_Fetch failed", fetchResult);
                 }
 
-                var row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                var row = new JdeRow();
                 foreach (var column in resolvedColumns)
                 {
                     object? value = ReadValueFromColumns(hRequest, viewName, column);
-                    row[column.Name] = value ?? string.Empty;
+                    row[column.Name] = ToRowText(value);
                 }
 
                 yield return row;
@@ -1101,6 +1102,11 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
         }
     }
 
+    private static string ToRowText(object? value)
+    {
+        return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
     private static void ProcessFetchedRecordConvertOnly(HREQUEST hRequest)
     {
         int flags = RECORD_CONVERT;
@@ -1498,7 +1504,7 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
     }
 
     private static bool RowMatchesFilters(
-        IReadOnlyDictionary<string, object> row,
+        IReadOnlyDictionary<string, string> row,
         IReadOnlyList<JdeFilter> filters,
         IReadOnlyDictionary<string, JdeColumn> columnsByName)
     {
@@ -1509,7 +1515,7 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
                 return false;
             }
 
-            string rawText = rawValue?.ToString() ?? string.Empty;
+            string rawText = rawValue;
             if (!columnsByName.TryGetValue(filter.ColumnName, out var column))
             {
                 column = null;
@@ -1951,11 +1957,11 @@ internal sealed class JdeTableQueryEngine : IJdeTableQueryEngine
                 return false;
             }
 
-            var row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            var row = new JdeRow();
             foreach (var column in columns)
             {
                 object? value = ReadValueFromLayout(layout, rowBuffer, column);
-                row[column.Name] = value ?? string.Empty;
+                row[column.Name] = ToRowText(value);
             }
 
             result.Rows.Add(row);

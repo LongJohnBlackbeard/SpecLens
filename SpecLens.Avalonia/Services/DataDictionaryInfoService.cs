@@ -569,11 +569,11 @@ public sealed partial class DataDictionaryInfoService : ReactiveObject, IDataDic
         return glossaryGroup;
     }
 
-    private static string ReadRowValue(IReadOnlyDictionary<string, object> row, string columnName)
+    private static string ReadRowValue(IReadOnlyDictionary<string, string> row, string columnName)
     {
         if (row.TryGetValue(columnName, out var value))
         {
-            return value?.ToString()?.Trim() ?? string.Empty;
+            return value?.Trim() ?? string.Empty;
         }
 
         foreach (var entry in row)
@@ -583,7 +583,7 @@ public sealed partial class DataDictionaryInfoService : ReactiveObject, IDataDic
                 continue;
             }
 
-            var text = entry.Value?.ToString()?.Trim();
+            var text = entry.Value?.Trim();
             if (!string.IsNullOrWhiteSpace(text))
             {
                 return text;

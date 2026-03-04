@@ -88,11 +88,11 @@ public class QueryTests
         await Assert.That(count).IsGreaterThan(0);
     }
 
-    private static bool TryGetValue(IReadOnlyDictionary<string, object> row, string column, out string? value)
+    private static bool TryGetValue(IReadOnlyDictionary<string, string> row, string column, out string? value)
     {
         if (row.TryGetValue(column, out var direct))
         {
-            value = direct?.ToString();
+            value = direct;
             return true;
         }
 
@@ -103,7 +103,7 @@ public class QueryTests
                 continue;
             }
 
-            value = entry.Value?.ToString();
+            value = entry.Value;
             return true;
         }
 
