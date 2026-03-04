@@ -1398,7 +1398,7 @@ public partial class JdeClient : IDisposable
     /// <param name="dataItemPattern">Data item pattern. Supports '*' wildcard.</param>
     /// <param name="maxRows">Maximum rows to return. Use 0 for no limit.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Matching data dictionary items (summary fields populated).</returns>
+    /// <returns>Matching data dictionary items with full details only.</returns>
     public async Task<List<JdeDataDictionaryDetails>> SearchDataDictionariesAsync(
         string dataItemPattern,
         int maxRows = 200,
@@ -1422,7 +1422,48 @@ public partial class JdeClient : IDisposable
             filters,
             maxRows: maxRows,
             cancellationToken: cancellationToken);
-        return MapDataDictionarySearchResults(result);
+
+        var summaries = MapDataDictionarySearchResults(result);
+        if (summaries.Count == 0)
+        {
+            return summaries;
+        }
+
+        var details = await GetDataDictionariesAsync(
+            summaries.Select(item => item.DataItem),
+            cancellationToken);
+
+        if (details.Count == 0)
+        {
+            return new List<JdeDataDictionaryDetails>();
+        }
+
+        var detailsByDataItem = new Dictionary<string, JdeDataDictionaryDetails>(StringComparer.OrdinalIgnoreCase);
+        foreach (var detail in details)
+        {
+            if (string.IsNullOrWhiteSpace(detail.DataItem) || detailsByDataItem.ContainsKey(detail.DataItem))
+            {
+                continue;
+            }
+
+            detailsByDataItem[detail.DataItem] = detail;
+        }
+
+        if (detailsByDataItem.Count == 0)
+        {
+            return new List<JdeDataDictionaryDetails>();
+        }
+
+        var merged = new List<JdeDataDictionaryDetails>(summaries.Count);
+        foreach (var summary in summaries)
+        {
+            if (detailsByDataItem.TryGetValue(summary.DataItem, out var detail))
+            {
+                merged.Add(detail);
+            }
+        }
+
+        return merged;
     }
 
     /// <summary>
