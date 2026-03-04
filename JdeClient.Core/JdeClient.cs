@@ -1346,13 +1346,13 @@ public partial class JdeClient : IDisposable
     }
 
     /// <summary>
-    /// Retrieve data dictionary titles for the provided data item names (F9202).
+    /// Retrieve data dictionaries for the provided data item names (DTAI).
     /// </summary>
-    /// <param name="dataItems">Data dictionary items (DTAI)</param>
+    /// <param name="dataItemNames">Data dictionary items (DTAI)</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Titles for matching items</returns>
-    public async Task<List<JdeDataDictionaryTitle>> GetDataDictionaryTitlesAsync(
-        IEnumerable<string> dataItems,
+    /// <returns>Matching data dictionaries</returns>
+    public async Task<List<JdeDataDictionaryDetails>> GetDataDictionariesAsync(
+        IEnumerable<string> dataItemNames,
         CancellationToken cancellationToken = default)
     {
         _session.EnsureConnected();
@@ -1362,99 +1362,67 @@ public partial class JdeClient : IDisposable
             try
             {
                 using var queryEngine = _tableQueryEngineFactory.Create(_options);
-                return queryEngine.GetDataDictionaryTitles(dataItems);
+                return queryEngine.GetDataDictionaryDetails(dataItemNames);
             }
             catch (Exception ex) when (ex is not JdeException)
             {
-                throw new JdeApiException("GetDataDictionaryTitlesAsync", "Failed to retrieve data dictionary titles", ex);
+                throw new JdeApiException("GetDataDictionariesAsync", "Failed to retrieve data dictionaries", ex);
             }
         }, cancellationToken);
     }
 
     /// <summary>
-    /// Retrieve data dictionary descriptions (row/alpha) for the provided data item names.
+    /// Retrieve a single data dictionary entry by data item name (DTAI).
     /// </summary>
-    /// <param name="dataItems">Data dictionary items (DTAI)</param>
+    /// <param name="dataItemName">Data dictionary item (DTAI)</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Descriptions for matching items</returns>
-    public async Task<List<JdeDataDictionaryTitle>> GetDataDictionaryDescriptionsAsync(
-        IEnumerable<string> dataItems,
+    /// <returns>Matching data dictionary details, or null when not found</returns>
+    public async Task<JdeDataDictionaryDetails?> GetDataDictionaryAsync(
+        string dataItemName,
         CancellationToken cancellationToken = default)
     {
-        _session.EnsureConnected();
-
-        return await _session.ExecuteAsync(() =>
+        if (string.IsNullOrWhiteSpace(dataItemName))
         {
-            try
-            {
-                using var queryEngine = _tableQueryEngineFactory.Create(_options);
-                return queryEngine.GetDataDictionaryTitles(
-                    dataItems,
-                    new[]
-                    {
-                        JdeStructures.DDT_GLOSSARY,
-                        JdeStructures.DDT_ROW_DESC,
-                        JdeStructures.DDT_ALPHA_DESC,
-                        JdeStructures.DDT_COL_TITLE
-                    });
-            }
-            catch (Exception ex) when (ex is not JdeException)
-            {
-                throw new JdeApiException("GetDataDictionaryDescriptionsAsync", "Failed to retrieve data dictionary descriptions", ex);
-            }
-        }, cancellationToken);
+            throw new ArgumentNullException(nameof(dataItemName));
+        }
+
+        string lookup = dataItemName.Trim();
+        var results = await GetDataDictionariesAsync(new[] { lookup }, cancellationToken);
+        return results.FirstOrDefault(item =>
+            string.Equals(item.DataItem, lookup, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
-    /// Retrieve data dictionary item names for the provided data item aliases (F9200).
+    /// Search data dictionary items by wildcard pattern (DTAI column in F9200).
     /// </summary>
-    /// <param name="dataItems">Data dictionary items (DTAI)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Names for matching items</returns>
-    public async Task<List<JdeDataDictionaryItemName>> GetDataDictionaryItemNamesAsync(
-        IEnumerable<string> dataItems,
+    /// <param name="dataItemPattern">Data item pattern. Supports '*' wildcard.</param>
+    /// <param name="maxRows">Maximum rows to return. Use 0 for no limit.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Matching data dictionary items (summary fields populated).</returns>
+    public async Task<List<JdeDataDictionaryDetails>> SearchDataDictionariesAsync(
+        string dataItemPattern,
+        int maxRows = 200,
         CancellationToken cancellationToken = default)
     {
-        _session.EnsureConnected();
-
-        return await _session.ExecuteAsync(() =>
+        if (string.IsNullOrWhiteSpace(dataItemPattern))
         {
-            try
-            {
-                using var queryEngine = _tableQueryEngineFactory.Create(_options);
-                return queryEngine.GetDataDictionaryItemNames(dataItems);
-            }
-            catch (Exception ex) when (ex is not JdeException)
-            {
-                throw new JdeApiException("GetDataDictionaryItemNamesAsync", "Failed to retrieve data dictionary names", ex);
-            }
-        }, cancellationToken);
-    }
+            throw new ArgumentNullException(nameof(dataItemPattern));
+        }
 
-    /// <summary>
-    /// Retrieve data dictionary detail records for the provided data item names (DDDICT + DDTEXT).
-    /// </summary>
-    /// <param name="dataItems">Data dictionary items (DTAI)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Detail records for matching items</returns>
-    public async Task<List<JdeDataDictionaryDetails>> GetDataDictionaryDetailsAsync(
-        IEnumerable<string> dataItems,
-        CancellationToken cancellationToken = default)
-    {
-        _session.EnsureConnected();
-
-        return await _session.ExecuteAsync(() =>
+        if (maxRows < 0)
         {
-            try
-            {
-                using var queryEngine = _tableQueryEngineFactory.Create(_options);
-                return queryEngine.GetDataDictionaryDetails(dataItems);
-            }
-            catch (Exception ex) when (ex is not JdeException)
-            {
-                throw new JdeApiException("GetDataDictionaryDetailsAsync", "Failed to retrieve data dictionary details", ex);
-            }
-        }, cancellationToken);
+            throw new ArgumentOutOfRangeException(nameof(maxRows), "maxRows must be greater than or equal to zero.");
+        }
+
+        var filters = new List<JdeFilter>();
+        AddWildcardFilter(filters, "DTAI", dataItemPattern);
+
+        var result = await QueryTableAsync(
+            "F9200",
+            filters,
+            maxRows: maxRows,
+            cancellationToken: cancellationToken);
+        return MapDataDictionarySearchResults(result);
     }
 
     /// <summary>
@@ -2132,6 +2100,44 @@ public partial class JdeClient : IDisposable
 
         items.Sort((a, b) => string.Compare(a.ObjectId, b.ObjectId, StringComparison.OrdinalIgnoreCase));
         return items;
+    }
+
+    internal static List<JdeDataDictionaryDetails> MapDataDictionarySearchResults(JdeQueryResult result)
+    {
+        var items = new Dictionary<string, JdeDataDictionaryDetails>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in result.Rows)
+        {
+            var dataItem = FindFirstValue(row, "DTAI", "DATAITEM");
+            if (string.IsNullOrWhiteSpace(dataItem))
+            {
+                continue;
+            }
+
+            if (!items.TryGetValue(dataItem, out var item))
+            {
+                item = new JdeDataDictionaryDetails
+                {
+                    DataItem = dataItem
+                };
+                items[dataItem] = item;
+            }
+
+            item.Alias ??= FindFirstValue(row, "ALIAS", "NAME", "DL01");
+            item.SystemCode ??= FindFirstValue(row, "SY", "SYSTEMCODE");
+            if (item.GlossaryGroup == default)
+            {
+                string? glossaryGroup = FindFirstValue(row, "GG", "GLOSSARYGROUP");
+                if (!string.IsNullOrWhiteSpace(glossaryGroup))
+                {
+                    item.GlossaryGroup = glossaryGroup.Trim()[0];
+                }
+            }
+        }
+
+        var results = items.Values.ToList();
+        results.Sort((a, b) => string.Compare(a.DataItem, b.DataItem, StringComparison.OrdinalIgnoreCase));
+        return results;
     }
 
     internal static string? FindFirstValue(Dictionary<string, object> row, params string[] candidates)

@@ -125,15 +125,15 @@ public sealed class JdeSpecResolver
 
         if (missing.Count > 0)
         {
-            var titles = _client.GetDataDictionaryTitlesAsync(missing).GetAwaiter().GetResult();
-            foreach (var title in titles)
+            var dictionaries = _client.GetDataDictionariesAsync(missing).GetAwaiter().GetResult();
+            foreach (var dictionary in dictionaries)
             {
-                if (string.IsNullOrWhiteSpace(title.DataItem))
+                if (string.IsNullOrWhiteSpace(dictionary.DataItem))
                 {
                     continue;
                 }
 
-                _ddTitleCache[title.DataItem] = title.CombinedTitle;
+                _ddTitleCache[dictionary.DataItem] = dictionary.CombinedTitle;
             }
 
             foreach (var item in missing)

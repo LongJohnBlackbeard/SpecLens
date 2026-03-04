@@ -7,6 +7,22 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Consolidated Data Dictionary APIs into `GetDataDictionariesAsync(...)`, `GetDataDictionaryAsync(...)`, and `SearchDataDictionariesAsync(...)`.
+- Implemented the wildcard search workflow on `DTAI` via `SearchDataDictionariesAsync(...)` and standardized results on `JdeDataDictionaryDetails`.
+- Removed legacy Data Dictionary APIs: `GetDataDictionaryTitlesAsync`, `GetDataDictionaryDescriptionsAsync`, `GetDataDictionaryItemNamesAsync`, and `GetDataDictionaryDetailsAsync`.
+- Removed legacy Data Dictionary models: `JdeDataDictionaryTitle`, `JdeDataDictionaryItemName`, and `JdeDataDictionarySearchResult`.
+
+### Documentation
+
+- Updated `JdeClient.Core/README.md` with the consolidated Data Dictionary workflow and migration notes.
+
+### Tests
+
+- Updated Data Dictionary unit and integration tests to validate the consolidated API surface.
+- Added unit-test coverage for `GetDataDictionaryAsync(...)` not-found behavior and `SearchDataDictionariesAsync(...)` negative `maxRows` validation.
+
 ## [0.1.0-prototype.8] - 2026-03-03
 
 ### Changed

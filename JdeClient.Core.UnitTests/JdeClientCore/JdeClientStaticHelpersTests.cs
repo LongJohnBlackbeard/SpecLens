@@ -511,4 +511,42 @@ public class JdeClientStaticHelpersTests
         await Assert.That(codes[0].UserDefinedCodeType).IsEqualTo("CA");
         await Assert.That(codes[0].Code).IsEqualTo("01");
     }
+
+    [Test]
+    public async Task MapDataDictionarySearchResults_DedupesAndSorts()
+    {
+        var result = new JdeQueryResult
+        {
+            Rows = new List<Dictionary<string, object>>
+            {
+                new()
+                {
+                    ["DTAI"] = "MCU",
+                    ["ALIAS"] = "Business Unit",
+                    ["SY"] = "00",
+                    ["GG"] = "A"
+                },
+                new()
+                {
+                    ["DTAI"] = "AN8",
+                    ["ALIAS"] = "Address Number",
+                    ["SY"] = "01",
+                    ["GG"] = "A"
+                },
+                new()
+                {
+                    ["DTAI"] = "AN8",
+                    ["ALIAS"] = "Address Number Duplicate"
+                }
+            }
+        };
+
+        var matches = JdeClient.MapDataDictionarySearchResults(result);
+
+        await Assert.That(matches.Count).IsEqualTo(2);
+        await Assert.That(matches[0].DataItem).IsEqualTo("AN8");
+        await Assert.That(matches[0].Name).IsEqualTo("Address Number");
+        await Assert.That(matches[0].GlossaryGroup).IsEqualTo('A');
+        await Assert.That(matches[1].DataItem).IsEqualTo("MCU");
+    }
 }

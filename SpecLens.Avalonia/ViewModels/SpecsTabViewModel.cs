@@ -296,22 +296,22 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            var dictionaryNames = await _connectionService.RunExclusiveAsync(
-                client => client.GetDataDictionaryItemNamesAsync(aliases, cancellationToken),
-                cancellationToken);
             var dictionaryDetails = await _connectionService.RunExclusiveAsync(
-                client => client.GetDataDictionaryDetailsAsync(aliases, cancellationToken),
+                client => client.GetDataDictionariesAsync(aliases, cancellationToken),
                 cancellationToken);
 
             var nameLookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var item in dictionaryNames)
+            foreach (var item in dictionaryDetails)
             {
                 if (string.IsNullOrWhiteSpace(item.DataItem))
                 {
                     continue;
                 }
 
-                nameLookup.TryAdd(item.DataItem, item.Name ?? string.Empty);
+                if (!string.IsNullOrWhiteSpace(item.Name))
+                {
+                    nameLookup.TryAdd(item.DataItem, item.Name);
+                }
             }
 
             var descriptionLookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -322,7 +322,7 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
                     continue;
                 }
 
-                string description = GetDictionaryText(item, 'A', 'R', 'C', 'H');
+                string description = item.GetText('A', 'R', 'C', 'H') ?? string.Empty;
                 if (!string.IsNullOrWhiteSpace(description))
                 {
                     descriptionLookup.TryAdd(item.DataItem, description);
@@ -414,22 +414,22 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            var dictionaryNames = await _connectionService.RunExclusiveAsync(
-                client => client.GetDataDictionaryItemNamesAsync(aliases, cancellationToken),
-                cancellationToken);
             var dictionaryDetails = await _connectionService.RunExclusiveAsync(
-                client => client.GetDataDictionaryDetailsAsync(aliases, cancellationToken),
+                client => client.GetDataDictionariesAsync(aliases, cancellationToken),
                 cancellationToken);
 
             var nameLookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var item in dictionaryNames)
+            foreach (var item in dictionaryDetails)
             {
                 if (string.IsNullOrWhiteSpace(item.DataItem))
                 {
                     continue;
                 }
 
-                nameLookup.TryAdd(item.DataItem, item.Name ?? string.Empty);
+                if (!string.IsNullOrWhiteSpace(item.Name))
+                {
+                    nameLookup.TryAdd(item.DataItem, item.Name);
+                }
             }
 
             var descriptionLookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -440,7 +440,7 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
                     continue;
                 }
 
-                string description = GetDictionaryText(item, 'A', 'R', 'C', 'H');
+                string description = item.GetText('A', 'R', 'C', 'H') ?? string.Empty;
                 if (!string.IsNullOrWhiteSpace(description))
                 {
                     descriptionLookup.TryAdd(item.DataItem, description);
@@ -821,25 +821,6 @@ public sealed class SpecsTabViewModel : WorkspaceTabViewModel
         }
 
         return $"{tableName}.{columnName}";
-    }
-
-    private static string GetDictionaryText(JdeDataDictionaryDetails details, params char[] textTypes)
-    {
-        if (details.Texts.Count == 0 || textTypes.Length == 0)
-        {
-            return string.Empty;
-        }
-
-        foreach (var textType in textTypes)
-        {
-            var match = details.Texts.FirstOrDefault(text => text.TextType == textType);
-            if (match != null && !string.IsNullOrWhiteSpace(match.Text))
-            {
-                return match.Text.Trim();
-            }
-        }
-
-        return string.Empty;
     }
 
     private sealed record ViewportColumnDefinition(string Id, string DisplayName, double Width);

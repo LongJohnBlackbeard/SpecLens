@@ -54,8 +54,6 @@ public interface IDataDictionaryInfoService : INotifyPropertyChanged
 public sealed partial class DataDictionaryInfoService : ReactiveObject, IDataDictionaryInfoService
 {
     private static readonly ConcurrentDictionary<string, JdeDataDictionaryDetails> DetailsCache = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly ConcurrentDictionary<string, JdeDataDictionaryItemName> NameCache = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly ConcurrentDictionary<string, JdeDataDictionaryTitle> TitleCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, DataDictionaryOverrides> OverridesCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, string> GlossaryGroupCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -324,8 +322,6 @@ public sealed partial class DataDictionaryInfoService : ReactiveObject, IDataDic
             HasSelection = true;
 
             var details = await GetDetailsAsync(dataItem, cancellationToken);
-            var nameItem = await GetNameAsync(dataItem, cancellationToken);
-            var titleItem = await GetTitleAsync(dataItem, cancellationToken);
             var overrides = await GetOverridesAsync(dataItem, cancellationToken);
             var glossaryGroupValue = details != null ? FormatChar(details.GlossaryGroup) : string.Empty;
             if (string.IsNullOrWhiteSpace(glossaryGroupValue))
@@ -333,11 +329,11 @@ public sealed partial class DataDictionaryInfoService : ReactiveObject, IDataDic
                 glossaryGroupValue = await GetGlossaryGroupAsync(dataItem, cancellationToken) ?? string.Empty;
             }
 
-            string title1 = titleItem?.Title1 ?? string.Empty;
-            string title2 = titleItem?.Title2 ?? string.Empty;
+            string title1 = details?.ColumnTitle ?? string.Empty;
+            string title2 = details?.ColumnTitle2 ?? string.Empty;
             if (string.IsNullOrWhiteSpace(title1) && string.IsNullOrWhiteSpace(title2) && details != null)
             {
-                title1 = GetDictionaryText(details, 'C');
+                title1 = details.GetText('C') ?? string.Empty;
             }
 
             string displayDataItem = !string.IsNullOrWhiteSpace(overrides?.DataItemLong)
@@ -347,13 +343,13 @@ public sealed partial class DataDictionaryInfoService : ReactiveObject, IDataDic
                     : dataItem;
 
             DataItem = displayDataItem;
-            Name = nameItem?.Name ?? string.Empty;
-            Title = titleItem?.CombinedTitle ?? string.Empty;
+            Name = details?.Name ?? string.Empty;
+            Title = details?.CombinedTitle ?? string.Empty;
             ColumnTitle = title1;
             ColumnTitle2 = title2;
-            Description = details != null ? GetDictionaryText(details, 'A') : string.Empty;
-            RowDescription = details != null ? GetDictionaryText(details, 'R') : string.Empty;
-            Glossary = details != null ? GetDictionaryText(details, 'H') : string.Empty;
+            Description = details?.Description ?? string.Empty;
+            RowDescription = details?.RowDescription ?? string.Empty;
+            Glossary = details?.Glossary ?? string.Empty;
             SystemCode = details?.SystemCode ?? string.Empty;
             TypeCode = details != null ? FormatTypeCode(details) : string.Empty;
             Length = details?.Length.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
@@ -604,79 +600,15 @@ public sealed partial class DataDictionaryInfoService : ReactiveObject, IDataDic
             return cached;
         }
 
-        var results = await _connectionService.RunExclusiveAsync(
-            client => client.GetDataDictionaryDetailsAsync(new[] { dataItem }, cancellationToken),
+        var details = await _connectionService.RunExclusiveAsync(
+            client => client.GetDataDictionaryAsync(dataItem, cancellationToken),
             cancellationToken);
-
-        var details = results.FirstOrDefault(item =>
-            string.Equals(item.DataItem, dataItem, StringComparison.OrdinalIgnoreCase));
         if (details != null)
         {
             DetailsCache[dataItem] = details;
         }
 
         return details;
-    }
-
-    private async Task<JdeDataDictionaryItemName?> GetNameAsync(string dataItem, CancellationToken cancellationToken)
-    {
-        if (NameCache.TryGetValue(dataItem, out var cached))
-        {
-            return cached;
-        }
-
-        var results = await _connectionService.RunExclusiveAsync(
-            client => client.GetDataDictionaryItemNamesAsync(new[] { dataItem }, cancellationToken),
-            cancellationToken);
-
-        var nameItem = results.FirstOrDefault(item =>
-            string.Equals(item.DataItem, dataItem, StringComparison.OrdinalIgnoreCase));
-        if (nameItem != null)
-        {
-            NameCache[dataItem] = nameItem;
-        }
-
-        return nameItem;
-    }
-
-    private async Task<JdeDataDictionaryTitle?> GetTitleAsync(string dataItem, CancellationToken cancellationToken)
-    {
-        if (TitleCache.TryGetValue(dataItem, out var cached))
-        {
-            return cached;
-        }
-
-        var results = await _connectionService.RunExclusiveAsync(
-            client => client.GetDataDictionaryTitlesAsync(new[] { dataItem }, cancellationToken),
-            cancellationToken);
-
-        var titleItem = results.FirstOrDefault(item =>
-            string.Equals(item.DataItem, dataItem, StringComparison.OrdinalIgnoreCase));
-        if (titleItem != null)
-        {
-            TitleCache[dataItem] = titleItem;
-        }
-
-        return titleItem;
-    }
-
-    private static string GetDictionaryText(JdeDataDictionaryDetails details, params char[] textTypes)
-    {
-        if (details.Texts.Count == 0 || textTypes.Length == 0)
-        {
-            return string.Empty;
-        }
-
-        foreach (var textType in textTypes)
-        {
-            var match = details.Texts.FirstOrDefault(text => text.TextType == textType);
-            if (match != null && !string.IsNullOrWhiteSpace(match.Text))
-            {
-                return match.Text.Trim();
-            }
-        }
-
-        return string.Empty;
     }
 }
 
