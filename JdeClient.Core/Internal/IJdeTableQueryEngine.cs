@@ -87,16 +87,6 @@ internal interface IJdeTableQueryEngine : IDisposable
         bool allowSpecDataSourceFallback = true);
 
     /// <summary>
-    /// Get data dictionary titles for the given data items.
-    /// </summary>
-    List<JdeDataDictionaryTitle> GetDataDictionaryTitles(IEnumerable<string> dataItems, IReadOnlyList<int>? textTypes = null);
-
-    /// <summary>
-    /// Resolve data dictionary item names for the provided data items.
-    /// </summary>
-    List<JdeDataDictionaryItemName> GetDataDictionaryItemNames(IEnumerable<string> dataItems);
-
-    /// <summary>
     /// Retrieve detail records for data dictionary items.
     /// </summary>
     List<JdeDataDictionaryDetails> GetDataDictionaryDetails(IEnumerable<string> dataItems);

@@ -978,7 +978,7 @@ class Program
         }
 
         Console.WriteLine($"\nRetrieving data dictionary details for {item}...");
-        var detailsList = await client.GetDataDictionaryDetailsAsync(new[] { item });
+        var detailsList = await client.GetDataDictionariesAsync(new[] { item });
         if (detailsList.Count == 0)
         {
             Console.WriteLine("No data dictionary data found.");

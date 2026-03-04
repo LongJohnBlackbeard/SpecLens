@@ -116,96 +116,7 @@ public class JdeClientTableTests
     }
 
     [Test]
-    public async Task GetDataDictionaryDescriptionsAsync_UsesExpectedTextTypes()
-    {
-        // Arrange
-        var session = Substitute.For<IJdeSession>();
-        TestHelpers.SetupExecuteAsync<List<JdeDataDictionaryTitle>>(session);
-
-        var engine = Substitute.For<IJdeTableQueryEngine>();
-        engine.GetDataDictionaryTitles(Arg.Any<IEnumerable<string>>(), Arg.Any<IReadOnlyList<int>>())
-            .Returns(callInfo =>
-            {
-                var types = callInfo.ArgAt<IReadOnlyList<int>>(1);
-                var matches =
-                    types.Count == 4 &&
-                    types.Contains(DDT_GLOSSARY) &&
-                    types.Contains(DDT_ROW_DESC) &&
-                    types.Contains(DDT_ALPHA_DESC) &&
-                    types.Contains(DDT_COL_TITLE);
-
-                return matches
-                    ? new List<JdeDataDictionaryTitle> { new() { DataItem = "AN8", Title1 = "Title" } }
-                    : new List<JdeDataDictionaryTitle>();
-            });
-
-        var factory = Substitute.For<IJdeTableQueryEngineFactory>();
-        factory.Create(Arg.Any<JdeClientOptions>()).Returns(engine);
-
-        var client = new JdeClient(session, new JdeClientOptions(), factory);
-
-        // Act
-        var result = await client.GetDataDictionaryDescriptionsAsync(new[] { "AN8" });
-
-        // Assert
-        await Assert.That(result.Count).IsEqualTo(1);
-        await Assert.That(result[0].DataItem).IsEqualTo("AN8");
-    }
-
-    [Test]
-    public async Task GetDataDictionaryTitlesAsync_DelegatesToTableEngine()
-    {
-        // Arrange
-        var session = Substitute.For<IJdeSession>();
-        TestHelpers.SetupExecuteAsync<List<JdeDataDictionaryTitle>>(session);
-
-        var engine = Substitute.For<IJdeTableQueryEngine>();
-        var expected = new List<JdeDataDictionaryTitle>
-        {
-            new() { DataItem = "AN8", Title1 = "Address Number" }
-        };
-        engine.GetDataDictionaryTitles(Arg.Any<IEnumerable<string>>(), null).Returns(expected);
-
-        var factory = Substitute.For<IJdeTableQueryEngineFactory>();
-        factory.Create(Arg.Any<JdeClientOptions>()).Returns(engine);
-
-        var client = new JdeClient(session, new JdeClientOptions(), factory);
-
-        // Act
-        var result = await client.GetDataDictionaryTitlesAsync(new[] { "AN8" });
-
-        // Assert
-        await Assert.That(result.Count).IsEqualTo(1);
-    }
-
-    [Test]
-    public async Task GetDataDictionaryItemNamesAsync_DelegatesToTableEngine()
-    {
-        // Arrange
-        var session = Substitute.For<IJdeSession>();
-        TestHelpers.SetupExecuteAsync<List<JdeDataDictionaryItemName>>(session);
-
-        var engine = Substitute.For<IJdeTableQueryEngine>();
-        var expected = new List<JdeDataDictionaryItemName>
-        {
-            new() { DataItem = "AN8", Name = "Address Number" }
-        };
-        engine.GetDataDictionaryItemNames(Arg.Any<IEnumerable<string>>()).Returns(expected);
-
-        var factory = Substitute.For<IJdeTableQueryEngineFactory>();
-        factory.Create(Arg.Any<JdeClientOptions>()).Returns(engine);
-
-        var client = new JdeClient(session, new JdeClientOptions(), factory);
-
-        // Act
-        var result = await client.GetDataDictionaryItemNamesAsync(new[] { "AN8" });
-
-        // Assert
-        await Assert.That(result.Count).IsEqualTo(1);
-    }
-
-    [Test]
-    public async Task GetDataDictionaryDetailsAsync_DelegatesToTableEngine()
+    public async Task GetDataDictionariesAsync_DelegatesToTableEngine()
     {
         // Arrange
         var session = Substitute.For<IJdeSession>();
@@ -224,10 +135,138 @@ public class JdeClientTableTests
         var client = new JdeClient(session, new JdeClientOptions(), factory);
 
         // Act
-        var result = await client.GetDataDictionaryDetailsAsync(new[] { "AN8" });
+        var result = await client.GetDataDictionariesAsync(new[] { "AN8" });
 
         // Assert
         await Assert.That(result.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task GetDataDictionaryAsync_ReturnsMatchingItem()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        TestHelpers.SetupExecuteAsync<List<JdeDataDictionaryDetails>>(session);
+
+        var engine = Substitute.For<IJdeTableQueryEngine>();
+        engine.GetDataDictionaryDetails(Arg.Any<IEnumerable<string>>()).Returns(new List<JdeDataDictionaryDetails>
+        {
+            new() { DataItem = "AN8", Alias = "Address Number" }
+        });
+
+        var factory = Substitute.For<IJdeTableQueryEngineFactory>();
+        factory.Create(Arg.Any<JdeClientOptions>()).Returns(engine);
+
+        var client = new JdeClient(session, new JdeClientOptions(), factory);
+
+        // Act
+        var result = await client.GetDataDictionaryAsync("AN8");
+
+        // Assert
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.DataItem).IsEqualTo("AN8");
+        await Assert.That(result.Name).IsEqualTo("Address Number");
+    }
+
+    [Test]
+    public async Task GetDataDictionaryAsync_ItemNotFound_ReturnsNull()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        TestHelpers.SetupExecuteAsync<List<JdeDataDictionaryDetails>>(session);
+
+        var engine = Substitute.For<IJdeTableQueryEngine>();
+        engine.GetDataDictionaryDetails(Arg.Any<IEnumerable<string>>()).Returns(new List<JdeDataDictionaryDetails>
+        {
+            new() { DataItem = "MCU", Alias = "Business Unit" }
+        });
+
+        var factory = Substitute.For<IJdeTableQueryEngineFactory>();
+        factory.Create(Arg.Any<JdeClientOptions>()).Returns(engine);
+
+        var client = new JdeClient(session, new JdeClientOptions(), factory);
+
+        // Act
+        var result = await client.GetDataDictionaryAsync("AN8");
+
+        // Assert
+        await Assert.That(result).IsNull();
+    }
+
+    [Test]
+    public async Task SearchDataDictionariesAsync_UsesWildcardFilterAndMapsResults()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        TestHelpers.SetupExecuteAsync<JdeQueryResult>(session);
+
+        var engine = Substitute.For<IJdeTableQueryEngine>();
+        engine.QueryTable(
+                "F9200",
+                25,
+                Arg.Is<IReadOnlyList<JdeFilter>>(filters =>
+                    filters.Count == 1
+                    && filters[0].ColumnName == "DTAI"
+                    && filters[0].Operator == JdeFilterOperator.Like
+                    && filters[0].Value == "AN%"),
+                null,
+                null)
+            .Returns(new JdeQueryResult
+            {
+                TableName = "F9200",
+                Rows = new List<Dictionary<string, object>>
+                {
+                    new()
+                    {
+                        ["DTAI"] = "AN8",
+                        ["ALIAS"] = "Address Number",
+                        ["SY"] = "01",
+                        ["GG"] = "A"
+                    }
+                }
+            });
+
+        var factory = Substitute.For<IJdeTableQueryEngineFactory>();
+        factory.Create(Arg.Any<JdeClientOptions>()).Returns(engine);
+
+        var client = new JdeClient(session, new JdeClientOptions(), factory);
+
+        // Act
+        var results = await client.SearchDataDictionariesAsync("AN*", maxRows: 25);
+
+        // Assert
+        await Assert.That(results.Count).IsEqualTo(1);
+        await Assert.That(results[0].DataItem).IsEqualTo("AN8");
+        await Assert.That(results[0].Name).IsEqualTo("Address Number");
+        await Assert.That(results[0].SystemCode).IsEqualTo("01");
+        await Assert.That(results[0].GlossaryGroup).IsEqualTo('A');
+    }
+
+    [Test]
+    public async Task GetDataDictionaryAsync_EmptyName_Throws()
+    {
+        var client = new JdeClient(Substitute.For<IJdeSession>(), new JdeClientOptions());
+
+        await Assert.That(async () => await client.GetDataDictionaryAsync("   "))
+            .ThrowsExactly<ArgumentNullException>();
+    }
+
+    [Test]
+    public async Task SearchDataDictionariesAsync_EmptyPattern_Throws()
+    {
+        var client = new JdeClient(Substitute.For<IJdeSession>(), new JdeClientOptions());
+
+        await Assert.That(async () => await client.SearchDataDictionariesAsync(" "))
+            .ThrowsExactly<ArgumentNullException>();
+    }
+
+    [Test]
+    public async Task SearchDataDictionariesAsync_NegativeMaxRows_Throws()
+    {
+        var client = new JdeClient(Substitute.For<IJdeSession>(), new JdeClientOptions());
+
+        await Assert.That(async () => await client.SearchDataDictionariesAsync("AN*", maxRows: -1))
+            .ThrowsExactly<ArgumentOutOfRangeException>();
     }
 
     [Test]

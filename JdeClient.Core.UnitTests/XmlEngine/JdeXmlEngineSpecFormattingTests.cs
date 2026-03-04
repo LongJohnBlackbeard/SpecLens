@@ -20,7 +20,7 @@ public class JdeXmlEngineSpecFormattingTests
         TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeEventRulesXmlDocument>>(session);
         TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeSpecXmlDocument>>(session);
         TestHelpers.SetupExecuteAsync<List<JdeIndexInfo>>(session);
-        TestHelpers.SetupExecuteAsync<List<JdeDataDictionaryTitle>>(session);
+        TestHelpers.SetupExecuteAsync<List<JdeDataDictionaryDetails>>(session);
         TestHelpers.SetupExecuteAsync<List<JdeObjectInfo>>(session);
         session.UserHandle.Returns(new HUSER { Handle = new IntPtr(99) });
 
@@ -43,12 +43,24 @@ public class JdeXmlEngineSpecFormattingTests
             new() { Id = 1, Name = "IDX1", KeyColumns = new List<string> { "ABCD" } }
         });
 
-        tableEngine.GetDataDictionaryTitles(Arg.Any<IEnumerable<string>>(), null)
-            .Returns(new List<JdeDataDictionaryTitle>
+        tableEngine.GetDataDictionaryDetails(Arg.Any<IEnumerable<string>>())
+            .Returns(new List<JdeDataDictionaryDetails>
             {
-                new() { DataItem = "ABCD", Title1 = "Col A" },
-                new() { DataItem = "EFGH", Title1 = "Col B" },
-                new() { DataItem = "IJKL", Title1 = "Col C" }
+                new()
+                {
+                    DataItem = "ABCD",
+                    Texts = { new JdeDataDictionaryText { DataItem = "ABCD", TextType = 'C', Text = "Col A" } }
+                },
+                new()
+                {
+                    DataItem = "EFGH",
+                    Texts = { new JdeDataDictionaryText { DataItem = "EFGH", TextType = 'C', Text = "Col B" } }
+                },
+                new()
+                {
+                    DataItem = "IJKL",
+                    Texts = { new JdeDataDictionaryText { DataItem = "IJKL", TextType = 'C', Text = "Col C" } }
+                }
             });
 
         var eventXml = "<GBREvent szEventSpecKey=\"EV1\" xmlns=\"http://jde\">" +

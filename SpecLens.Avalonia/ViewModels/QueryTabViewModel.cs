@@ -23,7 +23,7 @@ namespace SpecLens.Avalonia.ViewModels;
 
 public sealed class QueryTabViewModel : WorkspaceTabViewModel
 {
-    private static readonly ConcurrentDictionary<string, JdeDataDictionaryTitle> DataDictionaryCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, string> DataDictionaryCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly IJdeConnectionService _connectionService;
     private readonly IAppSettingsService _settingsService;
     private readonly IDataDictionaryInfoService _dataDictionaryInfoService;
@@ -1468,21 +1468,21 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
 
         try
         {
-            var titles = await _connectionService.RunExclusiveAsync(
-                client => client.GetDataDictionaryTitlesAsync(missing, cancellationToken),
+            var dictionaries = await _connectionService.RunExclusiveAsync(
+                client => client.GetDataDictionariesAsync(missing, cancellationToken),
                 cancellationToken);
 
-            foreach (var title in titles)
+            foreach (var details in dictionaries)
             {
-                if (!string.IsNullOrWhiteSpace(title.DataItem))
+                if (!string.IsNullOrWhiteSpace(details.DataItem))
                 {
-                    DataDictionaryCache[title.DataItem] = title;
+                    DataDictionaryCache[details.DataItem] = BuildDescription(details) ?? string.Empty;
                 }
             }
         }
         catch (Exception ex)
         {
-            Log.Debug(ex, "Failed to load data dictionary titles for query filters.");
+            Log.Debug(ex, "Failed to load data dictionary details for query filters.");
         }
 
         ApplyDescriptionsFromCache();
@@ -1492,20 +1492,21 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
     {
         foreach (var filter in _filters)
         {
-            if (DataDictionaryCache.TryGetValue(filter.DataItem, out var title))
+            if (DataDictionaryCache.TryGetValue(filter.DataItem, out var description) &&
+                !string.IsNullOrWhiteSpace(description))
             {
-                filter.Description = BuildDescription(title);
+                filter.Description = description;
             }
         }
     }
 
-    private static string? BuildDescription(JdeDataDictionaryTitle title)
+    private static string? BuildDescription(JdeDataDictionaryDetails details)
     {
-        string part1 = title.Title1?.Trim() ?? string.Empty;
-        string part2 = title.Title2?.Trim() ?? string.Empty;
+        string part1 = details.ColumnTitle?.Trim() ?? string.Empty;
+        string part2 = details.ColumnTitle2?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(part1) && string.IsNullOrWhiteSpace(part2))
         {
-            return null;
+            return details.GetText('C', 'A', 'R', 'H')?.Trim();
         }
 
         if (string.IsNullOrWhiteSpace(part1))

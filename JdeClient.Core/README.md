@@ -169,6 +169,29 @@ foreach (var row in stream.Rows)
 }
 ```
 
+### Data Dictionary Workflow
+
+```csharp
+// 1) Search data dictionary items with wildcard support (DTAI)
+var matches = await client.SearchDataDictionariesAsync("AN*");
+
+// 2) Bulk fetch by data item names
+var dictionaries = await client.GetDataDictionariesAsync(new[] { "AN8", "MCU" });
+
+// 3) Pick a specific item and fetch full details/text in one call
+var details = await client.GetDataDictionaryAsync("AN8");
+Console.WriteLine(details?.CombinedTitle);
+Console.WriteLine(details?.Description);
+```
+
+#### Migration Notes
+
+- Use `SearchDataDictionariesAsync(...)` for wildcard discovery.
+- Use `GetDataDictionariesAsync(...)` for bulk lookup by data item names.
+- Use `GetDataDictionaryAsync(...)` for single-item lookup.
+- Removed legacy APIs: `GetDataDictionaryTitlesAsync`, `GetDataDictionaryDescriptionsAsync`, `GetDataDictionaryItemNamesAsync`, and `GetDataDictionaryDetailsAsync`.
+- Removed legacy models: `JdeDataDictionaryTitle`, `JdeDataDictionaryItemName`, and `JdeDataDictionarySearchResult`.
+
 ### User Defined Codes (F0004/F0005)
 
 ```csharp

@@ -247,34 +247,6 @@ public class JdeModelAndExceptionTests
     }
 
     [Test]
-    public async Task JdeDataDictionaryTitle_CombinedTitle_BothNull()
-    {
-        var title = new JdeDataDictionaryTitle();
-        await Assert.That(title.CombinedTitle is null).IsTrue();
-    }
-
-    [Test]
-    public async Task JdeDataDictionaryTitle_CombinedTitle_OnlyTitle1()
-    {
-        var title = new JdeDataDictionaryTitle { Title1 = "Address" };
-        await Assert.That(title.CombinedTitle).IsEqualTo("Address");
-    }
-
-    [Test]
-    public async Task JdeDataDictionaryTitle_CombinedTitle_OnlyTitle2()
-    {
-        var title = new JdeDataDictionaryTitle { Title2 = "Number" };
-        await Assert.That(title.CombinedTitle).IsEqualTo("Number");
-    }
-
-    [Test]
-    public async Task JdeDataDictionaryTitle_CombinedTitle_Both()
-    {
-        var title = new JdeDataDictionaryTitle { Title1 = "Address", Title2 = "Number" };
-        await Assert.That(title.CombinedTitle).IsEqualTo("Address Number");
-    }
-
-    [Test]
     public async Task JdeDataDictionaryDetails_AllPropertySetters()
     {
         var details = new JdeDataDictionaryDetails
@@ -345,6 +317,39 @@ public class JdeModelAndExceptionTests
         await Assert.That(details.DisplayRuleBfnName).IsEqualTo("DRBF");
         await Assert.That(details.EditRuleBfnName).IsEqualTo("ERBF");
         await Assert.That(details.SearchFormName).IsEqualTo("SFN");
+    }
+
+    [Test]
+    public async Task JdeDataDictionaryDetails_ConvenienceTextProperties()
+    {
+        var details = new JdeDataDictionaryDetails
+        {
+            DataItem = "AN8",
+            Alias = "Address Number"
+        };
+        details.Texts.Add(new JdeDataDictionaryText { DataItem = "AN8", TextType = 'C', Text = "Address\r\nNumber" });
+        details.Texts.Add(new JdeDataDictionaryText { DataItem = "AN8", TextType = 'A', Text = "Alpha Desc" });
+        details.Texts.Add(new JdeDataDictionaryText { DataItem = "AN8", TextType = 'R', Text = "Row Desc" });
+        details.Texts.Add(new JdeDataDictionaryText { DataItem = "AN8", TextType = 'H', Text = "Glossary Desc" });
+
+        await Assert.That(details.Name).IsEqualTo("Address Number");
+        await Assert.That(details.ColumnTitle).IsEqualTo("Address");
+        await Assert.That(details.ColumnTitle2).IsEqualTo("Number");
+        await Assert.That(details.CombinedTitle).IsEqualTo("Address Number");
+        await Assert.That(details.Description).IsEqualTo("Alpha Desc");
+        await Assert.That(details.RowDescription).IsEqualTo("Row Desc");
+        await Assert.That(details.Glossary).IsEqualTo("Glossary Desc");
+    }
+
+    [Test]
+    public async Task JdeDataDictionaryDetails_GetText_UsesFallbackOrder()
+    {
+        var details = new JdeDataDictionaryDetails { DataItem = "AN8" };
+        details.Texts.Add(new JdeDataDictionaryText { DataItem = "AN8", TextType = 'R', Text = "Row Desc" });
+
+        var text = details.GetText('A', 'R');
+
+        await Assert.That(text).IsEqualTo("Row Desc");
     }
 
     [Test]

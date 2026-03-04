@@ -31,49 +31,11 @@ public class DataDictionaryTests
     }
 
     [Test]
-    public async Task GetDataDictionaryTitlesAsync_WithKnownItem_ReturnsTitle()
+    public async Task GetDataDictionariesAsync_WithKnownItem_ReturnsDetails()
     {
         await EnsureConnectedAsync();
 
-        var results = await _client.GetDataDictionaryTitlesAsync(new[] { KnownDataItem });
-        var item = results.FirstOrDefault(entry =>
-            string.Equals(entry.DataItem, KnownDataItem, StringComparison.OrdinalIgnoreCase));
-
-        await Assert.That(item).IsNotNull();
-        if (item == null)
-        {
-            return;
-        }
-
-        await Assert.That(item.DataItem).IsEqualTo(KnownDataItem);
-        await Assert.That(string.IsNullOrWhiteSpace(item.Title1) && string.IsNullOrWhiteSpace(item.Title2)).IsFalse();
-    }
-
-    [Test]
-    public async Task GetDataDictionaryItemNamesAsync_WithKnownItem_ReturnsName()
-    {
-        await EnsureConnectedAsync();
-
-        var results = await _client.GetDataDictionaryItemNamesAsync(new[] { KnownDataItem });
-        var item = results.FirstOrDefault(entry =>
-            string.Equals(entry.DataItem, KnownDataItem, StringComparison.OrdinalIgnoreCase));
-
-        await Assert.That(item).IsNotNull();
-        if (item == null)
-        {
-            return;
-        }
-
-        await Assert.That(item.DataItem).IsEqualTo(KnownDataItem);
-        await Assert.That(string.IsNullOrWhiteSpace(item.Name)).IsFalse();
-    }
-
-    [Test]
-    public async Task GetDataDictionaryDetailsAsync_WithKnownItem_ReturnsDetails()
-    {
-        await EnsureConnectedAsync();
-
-        var results = await _client.GetDataDictionaryDetailsAsync(new[] { KnownDataItem });
+        var results = await _client.GetDataDictionariesAsync(new[] { KnownDataItem });
         var item = results.FirstOrDefault(entry =>
             string.Equals(entry.DataItem, KnownDataItem, StringComparison.OrdinalIgnoreCase));
 
@@ -86,5 +48,34 @@ public class DataDictionaryTests
         await Assert.That(item.DataItem).IsEqualTo(KnownDataItem);
         await Assert.That(item.Length).IsGreaterThan(0);
         await Assert.That(item.TypeCode).IsNotEqualTo(default(char));
+    }
+
+    [Test]
+    public async Task SearchDataDictionariesAsync_WithWildcard_ReturnsKnownItem()
+    {
+        await EnsureConnectedAsync();
+
+        var results = await _client.SearchDataDictionariesAsync("AN*");
+        var item = results.FirstOrDefault(entry =>
+            string.Equals(entry.DataItem, KnownDataItem, StringComparison.OrdinalIgnoreCase));
+
+        await Assert.That(item).IsNotNull();
+    }
+
+    [Test]
+    public async Task GetDataDictionaryAsync_WithKnownItem_ReturnsDetails()
+    {
+        await EnsureConnectedAsync();
+
+        var item = await _client.GetDataDictionaryAsync(KnownDataItem);
+
+        await Assert.That(item).IsNotNull();
+        if (item == null)
+        {
+            return;
+        }
+
+        await Assert.That(item.DataItem).IsEqualTo(KnownDataItem);
+        await Assert.That(item.Length).IsGreaterThan(0);
     }
 }

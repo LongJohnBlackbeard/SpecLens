@@ -43,4 +43,120 @@ public sealed class JdeDataDictionaryDetails
     /// Associated DDTEXT rows for this data item.
     /// </summary>
     public List<JdeDataDictionaryText> Texts { get; } = new();
+
+    /// <summary>
+    /// Friendly display name for the item.
+    /// </summary>
+    public string? Name => Alias;
+
+    /// <summary>
+    /// First line of column title text (DDTEXT type C).
+    /// </summary>
+    public string? ColumnTitle
+    {
+        get
+        {
+            var (title1, _) = SplitTitle(GetText('C'));
+            return title1;
+        }
+    }
+
+    /// <summary>
+    /// Second line of column title text (DDTEXT type C).
+    /// </summary>
+    public string? ColumnTitle2
+    {
+        get
+        {
+            var (_, title2) = SplitTitle(GetText('C'));
+            return title2;
+        }
+    }
+
+    /// <summary>
+    /// Combined column title text.
+    /// </summary>
+    public string? CombinedTitle
+    {
+        get
+        {
+            string? part1 = ColumnTitle;
+            string? part2 = ColumnTitle2;
+            if (string.IsNullOrWhiteSpace(part1))
+            {
+                return string.IsNullOrWhiteSpace(part2) ? null : part2;
+            }
+
+            if (string.IsNullOrWhiteSpace(part2))
+            {
+                return part1;
+            }
+
+            return $"{part1} {part2}";
+        }
+    }
+
+    /// <summary>
+    /// Alpha description text (DDTEXT type A).
+    /// </summary>
+    public string? Description => GetText('A');
+
+    /// <summary>
+    /// Row description text (DDTEXT type R).
+    /// </summary>
+    public string? RowDescription => GetText('R');
+
+    /// <summary>
+    /// Glossary text (DDTEXT type H).
+    /// </summary>
+    public string? Glossary => GetText('H');
+
+    /// <summary>
+    /// Return the first non-empty text matching the supplied text types.
+    /// </summary>
+    public string? GetText(params char[] textTypes)
+    {
+        if (Texts.Count == 0 || textTypes == null || textTypes.Length == 0)
+        {
+            return null;
+        }
+
+        foreach (var textType in textTypes)
+        {
+            char target = char.ToUpperInvariant(textType);
+            var match = Texts.FirstOrDefault(text => char.ToUpperInvariant(text.TextType) == target);
+            if (!string.IsNullOrWhiteSpace(match?.Text))
+            {
+                return match.Text.Trim();
+            }
+        }
+
+        return null;
+    }
+
+    private static (string? Title1, string? Title2) SplitTitle(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return (null, null);
+        }
+
+        var lines = text
+            .Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToList();
+
+        if (lines.Count == 0)
+        {
+            return (null, null);
+        }
+
+        if (lines.Count == 1)
+        {
+            return (lines[0], null);
+        }
+
+        return (lines[0], lines[1]);
+    }
 }
