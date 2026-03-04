@@ -184,6 +184,12 @@ Console.WriteLine(details?.CombinedTitle);
 Console.WriteLine(details?.Description);
 ```
 
+Notes:
+
+- `SearchDataDictionariesAsync(...)` returns fully hydrated `JdeDataDictionaryDetails` entries only.
+- Search discovery uses `F9200` (`DTAI`) to find candidates, then hydrates details/text from dictionary APIs (`DDDICT`/`DDTEXT`).
+- Candidates that cannot be hydrated are not returned in search results.
+
 #### Migration Notes
 
 - Use `SearchDataDictionariesAsync(...)` for wildcard discovery.

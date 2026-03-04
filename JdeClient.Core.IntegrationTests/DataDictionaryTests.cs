@@ -60,6 +60,14 @@ public class DataDictionaryTests
             string.Equals(entry.DataItem, KnownDataItem, StringComparison.OrdinalIgnoreCase));
 
         await Assert.That(item).IsNotNull();
+        if (item == null)
+        {
+            return;
+        }
+
+        await Assert.That(item.DataItem).IsEqualTo(KnownDataItem);
+        await Assert.That(item.Length).IsGreaterThan(0);
+        await Assert.That(item.TypeCode).IsNotEqualTo(default(char));
     }
 
     [Test]

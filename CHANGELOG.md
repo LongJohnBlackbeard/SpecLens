@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-prototype.10] - 2026-03-04
+
+### Changed
+
+- Updated `SearchDataDictionariesAsync(...)` to return fully hydrated `JdeDataDictionaryDetails` entries only.
+- Wildcard search still discovers candidates by `DTAI` from `F9200`, then hydrates details/text via dictionary APIs (`DDDICT`/`DDTEXT`).
+- Removed summary-row fallback from search results when hydration is unavailable.
+
+### Documentation
+
+- Clarified `JdeClient.Core/README.md` Data Dictionary workflow notes to describe strict hydration-only search behavior.
+
+### Tests
+
+- Updated unit tests to validate hydrated search results and no-row behavior when candidate hydration fails.
+- Updated integration tests so wildcard search asserts hydrated data dictionary detail fields.
+
 ## [0.1.0-prototype.9] - 2026-03-04
 
 ### Changed
