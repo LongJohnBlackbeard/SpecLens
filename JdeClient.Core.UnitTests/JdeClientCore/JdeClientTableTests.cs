@@ -215,7 +215,7 @@ public class JdeClientTableTests
             .Returns(new JdeQueryResult
             {
                 TableName = "F9200",
-                Rows = new List<Dictionary<string, object>>
+                Rows = new List<JdeRow>
                 {
                     new()
                     {
@@ -281,7 +281,7 @@ public class JdeClientTableTests
             .Returns(new JdeQueryResult
             {
                 TableName = "F9200",
-                Rows = new List<Dictionary<string, object>>
+                Rows = new List<JdeRow>
                 {
                     new()
                     {
@@ -374,7 +374,7 @@ public class JdeClientTableTests
 
         var engine = Substitute.For<IJdeTableQueryEngine>();
         var result = new JdeQueryResult { TableName = "F98220" };
-        result.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        result.Rows.Add(new JdeRow
         {
             ["OMWPRJID"] = "PRJ1",
             ["OMWDESC"] = "Test Project",
@@ -418,24 +418,24 @@ public class JdeClientTableTests
         var engine = Substitute.For<IJdeTableQueryEngine>();
 
         var userResult = new JdeQueryResult { TableName = "F98221" };
-        userResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        userResult.Rows.Add(new JdeRow
         {
             ["OMWPRJID"] = "PRJ1",
             ["OMWUSER"] = "ALICE"
         });
-        userResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        userResult.Rows.Add(new JdeRow
         {
             ["OMWPRJID"] = "PRJ2",
             ["OMWUSER"] = "ALICE"
         });
 
         var projectResult = new JdeQueryResult { TableName = "F98220" };
-        projectResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        projectResult.Rows.Add(new JdeRow
         {
             ["OMWPRJID"] = "PRJ1",
             ["OMWPS"] = "28"
         });
-        projectResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        projectResult.Rows.Add(new JdeRow
         {
             ["OMWPRJID"] = "PRJ3",
             ["OMWPS"] = "28"
@@ -486,14 +486,14 @@ public class JdeClientTableTests
         var engine = Substitute.For<IJdeTableQueryEngine>();
 
         var userResult = new JdeQueryResult { TableName = "F98221" };
-        userResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        userResult.Rows.Add(new JdeRow
         {
             ["OMWPRJID"] = "PRJ1",
             ["OMWUSER"] = "ALICE"
         });
 
         var projectResult = new JdeQueryResult { TableName = "F98220" };
-        projectResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        projectResult.Rows.Add(new JdeRow
         {
             ["OMWPRJID"] = "PRJ1",
             ["OMWPS"] = "28"
@@ -585,7 +585,7 @@ public class JdeClientTableTests
 
         var engine = Substitute.For<IJdeTableQueryEngine>();
         var result = new JdeQueryResult { TableName = "F98222" };
-        result.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        result.Rows.Add(new JdeRow
         {
             ["OMWPRJID"] = "PRJ1",
             ["OMWOBJID"] = "R123456!VER000001",
@@ -632,7 +632,7 @@ public class JdeClientTableTests
 
         var engine = Substitute.For<IJdeTableQueryEngine>();
         var result = new JdeQueryResult { TableName = "F98222" };
-        result.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        result.Rows.Add(new JdeRow
         {
             ["OMWPRJID"] = "PRJ1",
             ["OMWOBJID"] = "F0101",
@@ -672,7 +672,7 @@ public class JdeClientTableTests
 
         var engine = Substitute.For<IJdeTableQueryEngine>();
         var result = new JdeQueryResult { TableName = "F0004" };
-        result.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        result.Rows.Add(new JdeRow
         {
             ["SY"] = "01",
             ["RT"] = "ST",
@@ -786,7 +786,7 @@ public class JdeClientTableTests
 
         var engine = Substitute.For<IJdeTableQueryEngine>();
         var result = new JdeQueryResult { TableName = "F0005" };
-        result.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        result.Rows.Add(new JdeRow
         {
             ["SY"] = "01",
             ["RT"] = "ST",

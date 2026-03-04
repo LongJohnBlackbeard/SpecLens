@@ -5,15 +5,15 @@ namespace JdeClient.Core.Models;
 /// <summary>
 /// Streams table rows without buffering the full result set in memory.
 /// </summary>
-public sealed class JdeQueryStream : IEnumerable<Dictionary<string, object>>
+public sealed class JdeQueryStream : IEnumerable<JdeRow>
 {
-    private readonly Func<IEnumerable<Dictionary<string, object>>> _enumerate;
+    private readonly Func<IEnumerable<JdeRow>> _enumerate;
 
     internal JdeQueryStream(
         string tableName,
         IReadOnlyList<string> columnNames,
         int? maxRows,
-        Func<IEnumerable<Dictionary<string, object>>> enumerate)
+        Func<IEnumerable<JdeRow>> enumerate)
     {
         TableName = tableName;
         ColumnNames = columnNames;
@@ -36,7 +36,7 @@ public sealed class JdeQueryStream : IEnumerable<Dictionary<string, object>>
     /// </summary>
     public int? MaxRows { get; }
 
-    public IEnumerator<Dictionary<string, object>> GetEnumerator()
+    public IEnumerator<JdeRow> GetEnumerator()
     {
         return _enumerate().GetEnumerator();
     }

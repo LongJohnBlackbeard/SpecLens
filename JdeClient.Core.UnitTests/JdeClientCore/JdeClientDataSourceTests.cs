@@ -34,7 +34,7 @@ public class JdeClientDataSourceTests
         engine.StreamTableRows("F98611", 0, Arg.Any<IReadOnlyList<JdeFilter>>(), Arg.Any<IReadOnlyList<JdeColumn>>(), "PrimaryDS", null, null, true, Arg.Any<CancellationToken>())
             .Returns(new[]
             {
-                new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                new JdeRow
                 {
                     ["DATASOURCE"] = "PrimaryDS",
                     ["DBSERVER"] = "Server1",

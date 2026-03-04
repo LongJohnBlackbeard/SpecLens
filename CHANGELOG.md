@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-prototype.11] - 2026-03-04
+
+### Changed
+
+- **Breaking:** query rows now use `JdeRow` (`IReadOnlyDictionary<string, string>`) instead of `Dictionary<string, object>`.
+- Updated `JdeQueryResult.Rows` to `List<JdeRow>`.
+- Updated `JdeQueryStream` to stream `JdeRow` and to be consumed directly via `foreach (var row in stream)`.
+- Updated query engine and client internals to use typed rows end to end.
+- Updated downstream consumers (`SpecLens.Avalonia` and `JdeClient.TestConsole`) for typed row access.
+
+### Documentation
+
+- Updated `JdeClient.Core/README.md` query examples to iterate `JdeQueryStream` directly and document `JdeRow`.
+
+### Tests
+
+- Updated unit and integration tests to validate typed query rows (`JdeRow`) and string-based value access.
+
 ## [0.1.0-prototype.10] - 2026-03-04
 
 ### Changed

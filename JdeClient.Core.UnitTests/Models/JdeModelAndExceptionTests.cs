@@ -185,7 +185,7 @@ public class JdeModelAndExceptionTests
             IsTruncated = true,
             MaxRows = 100
         };
-        result.Rows.Add(new Dictionary<string, object> { ["AN8"] = 42 });
+        result.Rows.Add(new JdeRow { ["AN8"] = "42" });
         result.ColumnNames.Add("AN8");
 
         await Assert.That(result.RowCount).IsEqualTo(1);
@@ -684,9 +684,9 @@ public class JdeModelAndExceptionTests
     [Test]
     public async Task JdeQueryStream_Properties()
     {
-        var rows = new List<Dictionary<string, object>>
+        var rows = new List<JdeRow>
         {
-            new() { ["AN8"] = 42 }
+            new() { ["AN8"] = "42" }
         };
 
         var stream = new JdeQueryStream(
@@ -699,7 +699,7 @@ public class JdeModelAndExceptionTests
         await Assert.That(stream.ColumnNames.Count).IsEqualTo(1);
         await Assert.That(stream.MaxRows).IsEqualTo(100);
 
-        var enumeratedRows = new List<Dictionary<string, object>>();
+        var enumeratedRows = new List<JdeRow>();
         foreach (var row in stream)
         {
             enumeratedRows.Add(row);
@@ -710,7 +710,7 @@ public class JdeModelAndExceptionTests
     [Test]
     public async Task JdeQueryStream_NonGenericEnumerator()
     {
-        var rows = new List<Dictionary<string, object>> { new() { ["AN8"] = 1 } };
+        var rows = new List<JdeRow> { new() { ["AN8"] = "1" } };
         var stream = new JdeQueryStream("F0101", new[] { "AN8" }, null, () => rows);
 
         // Exercise the non-generic IEnumerable.GetEnumerator() path

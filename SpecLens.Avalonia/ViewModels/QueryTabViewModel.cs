@@ -514,7 +514,7 @@ public sealed class QueryTabViewModel : WorkspaceTabViewModel
                         foreach (var column in stream.ColumnNames)
                         {
                             object? cellValue;
-                            if (row.TryGetValue(column, out var value) && value != null && value != DBNull.Value)
+                            if (row.TryGetValue(column, out var value) && !string.IsNullOrWhiteSpace(value))
                             {
                                 cellValue = value;
                             }

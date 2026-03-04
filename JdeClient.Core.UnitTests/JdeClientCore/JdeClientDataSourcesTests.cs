@@ -26,7 +26,7 @@ public class JdeClientDataSourcesTests
             Columns = new List<JdeColumn> { new() { Name = "DATP" } }
         });
 
-        var rows = new List<Dictionary<string, object>>
+        var rows = new List<JdeRow>
         {
             new()
             {
@@ -59,7 +59,7 @@ public class JdeClientDataSourcesTests
                 var dataSource = callInfo.ArgAt<string?>(4);
                 return dataSource == "System - 920"
                     ? rows
-                    : Enumerable.Empty<Dictionary<string, object>>();
+                    : Enumerable.Empty<JdeRow>();
             });
 
         var resolver = Substitute.For<IDataSourceResolver>();
@@ -93,19 +93,19 @@ public class JdeClientDataSourcesTests
         tableFactory.Create(Arg.Any<JdeClientOptions>()).Returns(tableEngine);
 
         var queryResult = new JdeQueryResult { TableName = "F00942" };
-        queryResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        queryResult.Rows.Add(new JdeRow
         {
             ["EMPATHCD"] = " PY920 "
         });
-        queryResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        queryResult.Rows.Add(new JdeRow
         {
             ["PATHCD"] = "DV920"
         });
-        queryResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        queryResult.Rows.Add(new JdeRow
         {
             ["PATHCODE"] = "py920"
         });
-        queryResult.Rows.Add(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        queryResult.Rows.Add(new JdeRow
         {
             ["PATHCODE"] = " "
         });
