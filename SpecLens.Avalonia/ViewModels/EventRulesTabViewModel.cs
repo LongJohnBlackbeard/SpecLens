@@ -29,9 +29,13 @@ public sealed class EventRulesTabViewModel : WorkspaceTabViewModel
     private string _sourceDocumentTitle = "Source (.c)";
     private string _headerDocumentTitle = "Header (.h)";
     private string _dataStructureName = string.Empty;
+    private string _componentConfiguration = string.Empty;
+    private IReadOnlyList<JdeSpecMetadataSection> _selectedMetadataSections = Array.Empty<JdeSpecMetadataSection>();
+    private JdeSpecMetadataSection? _selectedMetadataSection;
     private string _statusMessage = "Select an item to view event rules.";
     private bool _isLoading;
     private bool _isCodeView;
+    private bool _showRawXml;
     private IReadOnlyList<JdeBusinessFunctionCodeDocument>? _cachedBusinessFunctionDocuments;
 
     public EventRulesTabViewModel(
@@ -69,6 +73,7 @@ public sealed class EventRulesTabViewModel : WorkspaceTabViewModel
             }
 
             this.RaiseAndSetIfChanged(ref _selectedNode, value);
+            this.RaisePropertyChanged(nameof(ShowEventRulesDocument));
             _ = LoadSelectedNodeAsync(value);
         }
     }
@@ -148,6 +153,38 @@ public sealed class EventRulesTabViewModel : WorkspaceTabViewModel
         set => this.RaiseAndSetIfChanged(ref _dataStructureName, value);
     }
 
+    public string ComponentConfiguration
+    {
+        get => _componentConfiguration;
+        set => this.RaiseAndSetIfChanged(ref _componentConfiguration, value);
+    }
+
+    public IReadOnlyList<JdeSpecMetadataSection> SelectedMetadataSections
+    {
+        get => _selectedMetadataSections;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _selectedMetadataSections, value);
+            if (_selectedMetadataSection != null &&
+                !_selectedMetadataSections.Contains(_selectedMetadataSection))
+            {
+                SelectedMetadataSection = null;
+            }
+
+            this.RaisePropertyChanged(nameof(HasMetadataSections));
+        }
+    }
+
+    public JdeSpecMetadataSection? SelectedMetadataSection
+    {
+        get => _selectedMetadataSection;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _selectedMetadataSection, value);
+            this.RaisePropertyChanged(nameof(HasSelectedMetadataSection));
+        }
+    }
+
     public string StatusMessage
     {
         get => _statusMessage;
@@ -172,10 +209,37 @@ public sealed class EventRulesTabViewModel : WorkspaceTabViewModel
 
             this.RaiseAndSetIfChanged(ref _isCodeView, value);
             this.RaisePropertyChanged(nameof(IsEventRulesView));
+            this.RaisePropertyChanged(nameof(ShowEventRulesDocument));
         }
     }
 
     public bool IsEventRulesView => !IsCodeView;
+
+    public bool HasMetadataSections => SelectedMetadataSections.Count > 0;
+
+    public bool HasSelectedMetadataSection => SelectedMetadataSection != null;
+
+    public bool ShowEventRulesDocument => !IsCodeView && SelectedNode?.HasEventRules == true;
+
+    public bool ShowRawXml
+    {
+        get => _showRawXml;
+        set
+        {
+            if (_showRawXml == value)
+            {
+                return;
+            }
+
+            this.RaiseAndSetIfChanged(ref _showRawXml, value);
+            if (IsCodeView || _selectedNode == null)
+            {
+                return;
+            }
+
+            _ = LoadSelectedNodeAsync(_selectedNode);
+        }
+    }
 
     public bool HasDocument =>
         !string.IsNullOrWhiteSpace(DocumentText) ||
@@ -257,6 +321,9 @@ public sealed class EventRulesTabViewModel : WorkspaceTabViewModel
         SourceDocumentTitle = "Source (.c)";
         HeaderDocumentTitle = "Header (.h)";
         DataStructureName = string.Empty;
+        ComponentConfiguration = string.Empty;
+        SelectedMetadataSections = node?.MetadataSections ?? Array.Empty<JdeSpecMetadataSection>();
+        SelectedMetadataSection = null;
 
         if (node == null)
         {
@@ -269,7 +336,18 @@ public sealed class EventRulesTabViewModel : WorkspaceTabViewModel
         }
 
         DocumentTitle = $"{_jdeObject.ObjectName} - {node.Name}";
-        DataStructureName = string.Empty;
+        DataStructureName = BuildDataStructureLabel(node.DataStructureName);
+        ComponentConfiguration = BuildComponentConfiguration(node);
+
+        if (!IsCBusinessFunctionObject && !node.HasEventRules)
+        {
+            IsCodeView = false;
+            IsLoading = false;
+            StatusMessage = node.Children.Count > 0
+                ? "Select an event to view event rules."
+                : "No event rules for the selected item.";
+            return;
+        }
 
         IsLoading = true;
         IsCodeView = IsCBusinessFunctionObject && !IsNamedEventRuleObject;
@@ -324,15 +402,20 @@ public sealed class EventRulesTabViewModel : WorkspaceTabViewModel
                 return;
             }
 
+            var outputFormat = ShowRawXml
+                ? JdeEventRulesOutputFormat.Xml
+                : JdeEventRulesOutputFormat.Readable;
+
             var formatted = await _connectionService.RunExclusiveAsync(client =>
             {
                 if (_locationOption.IsLocal)
                 {
-                    return client.GetFormattedEventRulesAsync(node);
+                    return client.GetFormattedEventRulesAsync(node, outputFormat);
                 }
 
                 return client.GetFormattedEventRulesAsync(
                     node,
+                    outputFormat,
                     useCentralLocation: true,
                     dataSourceOverride: _locationOption.CentralObjectsDataSourceOverride);
             });
@@ -345,8 +428,8 @@ public sealed class EventRulesTabViewModel : WorkspaceTabViewModel
             DocumentText = formatted.Text;
             StatusMessage = formatted.StatusMessage;
             DataStructureName = string.IsNullOrWhiteSpace(formatted.TemplateName)
-                ? string.Empty
-                : $"Data Structure: {formatted.TemplateName}";
+                ? BuildDataStructureLabel(node.DataStructureName)
+                : BuildDataStructureLabel(formatted.TemplateName);
         }
         catch (Exception ex)
         {
@@ -442,6 +525,31 @@ public sealed class EventRulesTabViewModel : WorkspaceTabViewModel
         return string.IsNullOrWhiteSpace(candidate) ? fallbackObjectName : candidate;
     }
 
+    private static string BuildComponentConfiguration(JdeEventRulesNode node)
+    {
+        if (node == null)
+        {
+            return string.Empty;
+        }
+
+        if (!string.IsNullOrWhiteSpace(node.ComponentConfiguration))
+        {
+            return node.ComponentConfiguration.Trim();
+        }
+
+        return string.Empty;
+    }
+
+    private static string BuildDataStructureLabel(string? templateName)
+    {
+        if (string.IsNullOrWhiteSpace(templateName))
+        {
+            return string.Empty;
+        }
+
+        return $"Data Structure: {templateName.Trim()}";
+    }
+
     private static JdeEventRulesNode? FindNodeByName(JdeEventRulesNode root, string name)
     {
         if (string.Equals(root.Name, name, StringComparison.OrdinalIgnoreCase))
@@ -473,7 +581,7 @@ public sealed class EventRulesTabViewModel : WorkspaceTabViewModel
                 ? "No child functions found."
                 : IsCBusinessFunctionObject && !IsNamedEventRuleObject
                     ? "Select a function to view C source/header."
-                    : "Select a function to view event rules.";
+                    : "Select an item to view event rules.";
         }
 
         if (Dispatcher.UIThread.CheckAccess())

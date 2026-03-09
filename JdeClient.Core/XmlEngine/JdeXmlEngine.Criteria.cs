@@ -17,48 +17,78 @@ public partial class JdeXmlEngine
             ?? throw new InvalidOperationException("CRE_HEADER node not found for criteria block.");
         var nodes = creHeader.Descendants(_xmlNamespace + "CRE_NODE").ToList();
         var statements = SplitIfRules(critText);
-        var formattedStatements = new List<string>(capacity: Math.Min(nodes.Count, statements.Count));
+        var formattedStatements = new List<string>(capacity: Math.Max(nodes.Count, statements.Count));
 
-        for (var index = 0; index < nodes.Count && index < statements.Count; index++)
+        for (var index = 0; index < nodes.Count; index++)
         {
             var node = nodes[index];
-            var statement = statements[index];
-            var comparisonType = node.Attribute("eCompType")?.Value ?? "EQUAL";
-            var comparisonString = comparisonType switch
-            {
-                "EQUAL" => ComparisonEqual,
-                "NOT_EQ" => ComparisonNotEqual,
-                "LE_OR_EQ" => ComparisonLessOrEqual,
-                "GR" => ComparisonGreaterThan,
-                "EQ_OR_EMPTY" => ComparisonEqualToOrEmpty,
-                _ => ComparisonEqual
-            };
+            string comparisonString = GetComparisonString(node.Attribute("eCompType")?.Value);
+            string statement = index < statements.Count ? statements[index] : string.Empty;
+            string defaultPrefix = index == 0 ? type : "And";
 
-            var objectAndPredicate = statement.Split(new[] { comparisonString }, 2, StringSplitOptions.None);
-            if (objectAndPredicate.Length < 2)
+            if (TryFormatCriteriaFromText(node, statement, comparisonString, defaultPrefix, out string formattedFromText))
             {
-                formattedStatements.Add(statement);
+                formattedStatements.Add(formattedFromText);
                 continue;
             }
 
-            // Only the first clause should inherit the event type prefix.
-            var defaultPrefix = index == 0 ? type : string.Empty;
-            var (prefix, objectVariable) = ExtractPrefix(objectAndPredicate[0], defaultPrefix);
-            var predicate = objectAndPredicate[1].Trim();
-
-            var subjectValue = ResolveOperand(node, "zSubject", objectVariable, decodeLiteral: false);
-            var predicateValue = ResolveOperand(node, "zPredicate", predicate, decodeLiteral: true);
-
-            if (string.IsNullOrWhiteSpace(prefix) || prefix == "")
-            {
-                prefix = type;
-            }
-
-            var formattedStatement = $"{prefix} {subjectValue} {comparisonString} {predicateValue}";
-            formattedStatements.Add(formattedStatement);
+            formattedStatements.Add(FormatCriteriaFromNode(node, comparisonString, defaultPrefix));
         }
 
         return formattedStatements;
+    }
+
+    private static string GetComparisonString(string? comparisonType)
+    {
+        return comparisonType?.Trim().ToUpperInvariant() switch
+        {
+            "EQUAL" => ComparisonEqual,
+            "NOT_EQ" => ComparisonNotEqual,
+            "LE" => ComparisonLessThan,
+            "LE_OR_EQ" => ComparisonLessOrEqual,
+            "GR" => ComparisonGreaterThan,
+            "GR_OR_EQ" => ComparisonGreaterOrEqual,
+            "EQ_OR_EMPTY" => ComparisonEqualToOrEmpty,
+            "IN_A_RANGE" => ComparisonInRange,
+            "IN_LIST" => ComparisonInList,
+            "NOT_IN_LIST" => ComparisonNotInList,
+            _ => ComparisonEqual
+        };
+    }
+
+    private bool TryFormatCriteriaFromText(
+        XElement node,
+        string statement,
+        string comparisonString,
+        string defaultPrefix,
+        out string formattedStatement)
+    {
+        formattedStatement = string.Empty;
+        if (string.IsNullOrWhiteSpace(statement))
+        {
+            return false;
+        }
+
+        var objectAndPredicate = statement.Split(new[] { comparisonString }, 2, StringSplitOptions.None);
+        if (objectAndPredicate.Length < 2)
+        {
+            return false;
+        }
+
+        var (prefix, objectVariable) = ExtractPrefix(objectAndPredicate[0], defaultPrefix);
+        var predicate = objectAndPredicate[1].Trim();
+        var subjectValue = ResolveOperand(node, "zSubject", objectVariable, decodeLiteral: false);
+        var predicateValue = ResolveOperand(node, "zPredicate", predicate, decodeLiteral: true);
+
+        formattedStatement = $"{(string.IsNullOrWhiteSpace(prefix) ? defaultPrefix : prefix)} {subjectValue} {comparisonString} {predicateValue}";
+        return true;
+    }
+
+    private string FormatCriteriaFromNode(XElement node, string comparisonString, string prefix)
+    {
+        var subjectValue = ResolveOperand(node, "zSubject", string.Empty, decodeLiteral: false);
+        var predicateValue = ResolveOperand(node, "zPredicate", string.Empty, decodeLiteral: true);
+        return $"{prefix} {subjectValue} {comparisonString} {predicateValue}";
     }
 
     private (string Prefix, string ObjectVariable) ExtractPrefix(string statement, string defaultPrefix)
@@ -95,27 +125,9 @@ public partial class JdeXmlEngine
 
         return child.Name.LocalName switch
         {
-            "DSOBJMember" => ApplyQualifier(fallback, ResolveDataStructureMemberLabel(child)) ?? fallback,
-            "DSOBJVariable" => ApplyQualifier(fallback, TryGetEventVariableName(child.Attribute("idVariable")?.Value)) ?? fallback,
-            "DSOBJLiteral" => decodeLiteral ? WebUtility.HtmlDecode(fallback) : fallback,
-            _ => fallback
+            "DSOBJLiteral" => decodeLiteral ? WebUtility.HtmlDecode(FormatLiteralValue(child)) : FormatLiteralValue(child),
+            _ => ResolveEventOperandLabel(child, fallback)
         };
-    }
-
-    private static string? ApplyQualifier(string fallback, string? resolved)
-    {
-        if (string.IsNullOrWhiteSpace(resolved))
-        {
-            return resolved;
-        }
-
-        var (qualifier, _) = SplitQualifier(fallback);
-        if (string.IsNullOrWhiteSpace(qualifier))
-        {
-            return resolved;
-        }
-
-        return $"{qualifier} {resolved}";
     }
 
     private List<string> SplitIfRules(string? code)
@@ -124,6 +136,10 @@ public partial class JdeXmlEngine
             return new List<string>();
 
         var rule = WebUtility.HtmlDecode(code).Trim();
+        if (rule.Length <= 1)
+        {
+            return new List<string>();
+        }
 
         // 1) Protect comparator phrases that contain "or"
         rule = Regex.Replace(

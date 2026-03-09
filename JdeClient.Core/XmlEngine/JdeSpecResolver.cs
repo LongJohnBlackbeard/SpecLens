@@ -12,15 +12,19 @@ namespace JdeClient.Core.XmlEngine;
 public sealed class JdeSpecResolver
 {
     private readonly JdeClient _client;
+    private readonly bool _useCentralLocation;
+    private readonly string? _dataSourceOverride;
     private readonly Dictionary<string, DataStructureTemplate> _templateCache;
     private readonly Dictionary<string, JdeTableInfo> _tableInfoCache;
     private readonly Dictionary<string, List<JdeIndexInfo>> _indexCache;
     private readonly Dictionary<string, string?> _ddTitleCache;
     private readonly Dictionary<string, string?> _bsfnNameCache;
 
-    public JdeSpecResolver(JdeClient client)
+    public JdeSpecResolver(JdeClient client, bool useCentralLocation = false, string? dataSourceOverride = null)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _useCentralLocation = useCentralLocation;
+        _dataSourceOverride = useCentralLocation ? dataSourceOverride : null;
         _templateCache = new Dictionary<string, DataStructureTemplate>(StringComparer.OrdinalIgnoreCase);
         _tableInfoCache = new Dictionary<string, JdeTableInfo>(StringComparer.OrdinalIgnoreCase);
         _indexCache = new Dictionary<string, List<JdeIndexInfo>>(StringComparer.OrdinalIgnoreCase);
@@ -43,7 +47,14 @@ public sealed class JdeSpecResolver
             return cached;
         }
 
-        var documents = _client.GetDataStructureXmlAsync(templateName).GetAwaiter().GetResult();
+        IReadOnlyList<JdeSpecXmlDocument> documents = _useCentralLocation
+            ? _client.GetDataStructureXmlAsync(
+                    templateName,
+                    useCentralLocation: true,
+                    _dataSourceOverride)
+                .GetAwaiter()
+                .GetResult()
+            : _client.GetDataStructureXmlAsync(templateName).GetAwaiter().GetResult();
         var document = documents.FirstOrDefault(d => !string.IsNullOrWhiteSpace(d.Xml));
         if (document == null)
         {
@@ -74,7 +85,14 @@ public sealed class JdeSpecResolver
             return cached;
         }
 
-        var info = _client.GetTableInfoAsync(tableName).GetAwaiter().GetResult();
+        var info = _useCentralLocation
+            ? _client.GetTableInfoAsync(
+                    tableName,
+                    _dataSourceOverride,
+                    allowObjectLibrarianFallback: false)
+                .GetAwaiter()
+                .GetResult()
+            : _client.GetTableInfoAsync(tableName).GetAwaiter().GetResult();
         if (info == null)
         {
             return null;
@@ -99,7 +117,14 @@ public sealed class JdeSpecResolver
             return cached;
         }
 
-        var indexes = _client.GetTableIndexesAsync(tableName).GetAwaiter().GetResult();
+        var indexes = _useCentralLocation
+            ? _client.GetTableIndexesAsync(
+                    tableName,
+                    _dataSourceOverride,
+                    allowObjectLibrarianFallback: false)
+                .GetAwaiter()
+                .GetResult()
+            : _client.GetTableIndexesAsync(tableName).GetAwaiter().GetResult();
         _indexCache[tableName] = indexes;
         return indexes;
     }

@@ -39,11 +39,11 @@ public partial class MainWindowViewModel : ViewModelBase, IActivatableViewModel
     private static readonly IReadOnlyDictionary<string, ObjectAction> ObjectTypeActions
         = new Dictionary<string, ObjectAction>(StringComparer.OrdinalIgnoreCase)
         {
-            ["TBLE"] = DefaultObjectActions,
+            ["TBLE"] = DefaultObjectActions | ObjectAction.EventRules,
             ["BSVW"] = DefaultObjectActions,
             ["BSFN"] = ObjectAction.EventRules,
             ["UBE"] = ObjectAction.EventRules,
-            ["APPL"] = ObjectAction.None,
+            ["APPL"] = ObjectAction.EventRules,
             ["DSTR"] = ObjectAction.None,
         };
 

@@ -67,4 +67,43 @@ public class JdeSpecResolverTests
         // Assert
         await Assert.That(resolved).IsEqualTo("B1234_ENGINE");
     }
+
+    [Test]
+    public async Task GetDataStructureTemplate_CentralLocation_UsesExplicitSource()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeSpecXmlDocument>>(session);
+        session.UserHandle.Returns(new HUSER { Handle = new IntPtr(1) });
+
+        var eventEngine = Substitute.For<IEventRulesQueryEngine>();
+        var eventFactory = Substitute.For<IEventRulesQueryEngineFactory>();
+        eventFactory.Create(Arg.Any<HUSER>(), Arg.Any<JdeClientOptions>()).Returns(eventEngine);
+
+        var xml = "<root szDescription=\"Template Desc\" xmlns=\"http://jde\"><Template><Item ItemID=\"1\" DDAlias=\"AL1\" FieldName=\"Field1\"/></Template></root>";
+        eventEngine.GetDataStructureXmlDocuments(
+                "D0001",
+                JdeSpecLocation.CentralObjects,
+                "Central Objects - PY920")
+            .Returns(new List<JdeSpecXmlDocument>
+            {
+                new() { SpecKey = "D0001", Xml = xml, RecordCount = 1 }
+            });
+
+        var client = new JdeClient(session, new JdeClientOptions(), eventRulesQueryEngineFactory: eventFactory);
+        var resolver = new JdeSpecResolver(
+            client,
+            useCentralLocation: true,
+            dataSourceOverride: "Central Objects - PY920");
+
+        // Act
+        var template = resolver.GetDataStructureTemplate("D0001");
+
+        // Assert
+        await Assert.That(template is not null).IsTrue();
+        eventEngine.Received(1).GetDataStructureXmlDocuments(
+            "D0001",
+            JdeSpecLocation.CentralObjects,
+            "Central Objects - PY920");
+    }
 }

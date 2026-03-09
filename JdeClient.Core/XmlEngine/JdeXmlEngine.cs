@@ -16,11 +16,17 @@ namespace JdeClient.Core.XmlEngine;
 /// </remarks>
 public partial class JdeXmlEngine
 {
+    private const string DynamicTemplateName = "__DYNAMIC__";
     private const string ComparisonEqual = "is equal to";
     private const string ComparisonNotEqual = "is not equal to";
+    private const string ComparisonLessThan = "is less than";
     private const string ComparisonLessOrEqual = "is less than or equal to";
     private const string ComparisonGreaterThan = "is greater than";
+    private const string ComparisonGreaterOrEqual = "is greater than or equal to";
     private const string ComparisonEqualToOrEmpty = "is equal to or empty";
+    private const string ComparisonInRange = "is in a range";
+    private const string ComparisonInList = "is in list";
+    private const string ComparisonNotInList = "is not in list";
     private const string OrMarker = "__OR_MARKER__";
 
     private static readonly Regex SplitOnAndOrRegex = new(
@@ -43,6 +49,8 @@ public partial class JdeXmlEngine
     private readonly Dictionary<string, DataStructureTemplateItem> _primaryTemplateItems;
     private readonly Dictionary<string, DataStructureTemplate> _templateCache;
     private readonly Dictionary<string, EventLevelVariable> _eventVariables;
+    private readonly Dictionary<string, string> _variableDisplayNames;
+    private readonly List<string> _declaredVariableLines;
     private readonly List<string> _outputLines;
     private readonly string? _primaryTemplateName;
     private int _indentLevel;
@@ -69,18 +77,34 @@ public partial class JdeXmlEngine
     {
         _specResolver = specResolver;
         EventXmlString = NormalizeXmlPayload(xmlString ?? throw new ArgumentNullException(nameof(xmlString)));
-        DataStructureXmlString = NormalizeXmlPayload(dsXmlString ?? throw new ArgumentNullException(nameof(dsXmlString)));
+        if (string.IsNullOrWhiteSpace(EventXmlString))
+        {
+            throw new InvalidOperationException("Event XML payload is empty.");
+        }
 
         EventXmlDocument = XDocument.Parse(EventXmlString);
+        var eventRoot = EventXmlDocument.Root
+            ?? throw new InvalidOperationException("Event XML root not found.");
+        var eventNamespace = eventRoot.Name.Namespace;
+
+        var normalizedDataStructureXml = NormalizeXmlPayload(dsXmlString ?? throw new ArgumentNullException(nameof(dsXmlString)));
+        if (string.IsNullOrWhiteSpace(normalizedDataStructureXml))
+        {
+            normalizedDataStructureXml = CreateFallbackDataStructureXml(eventNamespace, DynamicTemplateName);
+        }
+
+        DataStructureXmlString = normalizedDataStructureXml;
         DataStructureXmlDocument = XDocument.Parse(DataStructureXmlString);
 
         var dsRoot = DataStructureXmlDocument.Root
             ?? throw new InvalidOperationException("Data structure XML root not found.");
-        _xmlNamespace = dsRoot.Name.Namespace;
+        _xmlNamespace = eventNamespace == XNamespace.None
+            ? dsRoot.Name.Namespace
+            : eventNamespace;
         _textInfo = CultureInfo.GetCultureInfo("en-US").TextInfo;
 
         var templateRoot = dsRoot.Descendants().FirstOrDefault()
-            ?? throw new InvalidOperationException("Data structure template root not found.");
+            ?? dsRoot;
         DataStructureElements = templateRoot.Descendants();
         _primaryTemplateItems = BuildDataStructureIndex(templateRoot);
         _templateCache = new Dictionary<string, DataStructureTemplate>(StringComparer.OrdinalIgnoreCase);
@@ -93,6 +117,8 @@ public partial class JdeXmlEngine
                 itemsById: _primaryTemplateItems);
         }
         _eventVariables = new Dictionary<string, EventLevelVariable>(StringComparer.Ordinal);
+        _variableDisplayNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        _declaredVariableLines = new List<string>();
         _outputLines = new List<string>();
     }
 
@@ -113,9 +139,16 @@ public partial class JdeXmlEngine
         RootEventSpecKey = root.Attribute("szEventSpecKey")?.Value
                            ?? throw new InvalidOperationException("Event Spec Key Not Found");
 
+        PrimeKnownLabels(root);
+
         foreach (var block in EventElements)
         {
             InterpretXmlTag(block);
+        }
+
+        if (_outputLines.Count == 0 && ShouldEmitVariableList())
+        {
+            _outputLines.AddRange(_declaredVariableLines);
         }
 
         ReadableEventRule = _outputLines.Count == 0
@@ -128,6 +161,8 @@ public partial class JdeXmlEngine
         _indentLevel = 0;
         _outputLines.Clear();
         _eventVariables.Clear();
+        _variableDisplayNames.Clear();
+        _declaredVariableLines.Clear();
         RootEventSpecKey = string.Empty;
         ReadableEventRule = string.Empty;
     }
@@ -143,6 +178,11 @@ public partial class JdeXmlEngine
                 if (!string.IsNullOrWhiteSpace(variable.VariableId))
                 {
                     _eventVariables[variable.VariableId] = variable;
+                    _variableDisplayNames[variable.VariableId] = variable.VariableName;
+                }
+                if (!string.IsNullOrWhiteSpace(variable.VariableName))
+                {
+                    _declaredVariableLines.Add(variable.VariableName);
                 }
                 break;
             case "GBRASSIGN":
@@ -269,7 +309,82 @@ public partial class JdeXmlEngine
             return null;
         }
 
+        if (_variableDisplayNames.TryGetValue(id, out var displayName) &&
+            !string.IsNullOrWhiteSpace(displayName))
+        {
+            return displayName;
+        }
+
         return _eventVariables.TryGetValue(id, out var variable) ? variable.VariableName : null;
+    }
+
+    private void PrimeKnownLabels(XElement root)
+    {
+        foreach (var block in root.Elements())
+        {
+            if (!string.Equals(block.Name.LocalName, "GBRASSIGN", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var assignmentText = block.Attribute("textString")?.Value;
+            if (string.IsNullOrWhiteSpace(assignmentText))
+            {
+                continue;
+            }
+
+            var parts = assignmentText.Split('=', 2);
+            if (parts.Length != 2)
+            {
+                continue;
+            }
+
+            var targetLabel = parts[0].Trim();
+            var sourceLabel = parts[1].Trim();
+
+            var objToInner = block.Descendants(_xmlNamespace + "ObjTo").FirstOrDefault()?.Elements().FirstOrDefault();
+            PrimeVariableLabel(objToInner, targetLabel);
+
+            var objFromInner = block.Descendants(_xmlNamespace + "ObjFrom").FirstOrDefault()?.Elements().FirstOrDefault();
+            if (objFromInner != null &&
+                string.Equals(objFromInner.Name.LocalName, "DSOBJVariable", StringComparison.OrdinalIgnoreCase) &&
+                !sourceLabel.StartsWith("[", StringComparison.Ordinal))
+            {
+                PrimeVariableLabel(objFromInner, sourceLabel);
+            }
+        }
+    }
+
+    private void PrimeVariableLabel(XElement? operandElement, string label)
+    {
+        if (operandElement == null ||
+            !string.Equals(operandElement.Name.LocalName, "DSOBJVariable", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        string? id = operandElement.Attribute("idVariable")?.Value;
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return;
+        }
+
+        string? alias = operandElement.Attribute("szDict")?.Value;
+        string normalized = EnsureAliasSuffix(label, alias);
+        if (!string.IsNullOrWhiteSpace(normalized))
+        {
+            _variableDisplayNames[id] = normalized;
+        }
+    }
+
+    private bool ShouldEmitVariableList()
+    {
+        return _declaredVariableLines.Count > 0 &&
+               _declaredVariableLines.All(line =>
+                   line.StartsWith("frm_", StringComparison.OrdinalIgnoreCase) ||
+                   line.StartsWith("sec_", StringComparison.OrdinalIgnoreCase) ||
+                   line.StartsWith("rpt_", StringComparison.OrdinalIgnoreCase) ||
+                   line.StartsWith("rep_", StringComparison.OrdinalIgnoreCase));
     }
 
     // Spec XML can contain padding or non-XML bytes; normalize to the first element.
@@ -287,5 +402,19 @@ public partial class JdeXmlEngine
         }
 
         return cleaned;
+    }
+
+    private static string CreateFallbackDataStructureXml(XNamespace xmlNamespace, string templateName)
+    {
+        if (xmlNamespace == XNamespace.None)
+        {
+            xmlNamespace = "http://peoplesoft.com/e1/metadata/v1.0";
+        }
+
+        var root = new XElement(xmlNamespace + "DSTMPL",
+            new XAttribute("szTmplName", templateName),
+            new XElement(xmlNamespace + "Template"));
+
+        return new XDocument(root).ToString(SaveOptions.DisableFormatting);
     }
 }

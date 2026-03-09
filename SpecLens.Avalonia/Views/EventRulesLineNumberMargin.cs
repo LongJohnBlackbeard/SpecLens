@@ -36,10 +36,16 @@ internal sealed class EventRulesLineNumberMargin : LineNumberMargin
 
         if (!TextView.VisualLinesValid)
         {
-            TextView.EnsureVisualLines();
+            return;
         }
 
-        foreach (var visualLine in TextView.VisualLines)
+        IReadOnlyList<VisualLine>? visualLines = TextView.VisualLines;
+        if (visualLines == null || visualLines.Count == 0)
+        {
+            return;
+        }
+
+        foreach (VisualLine visualLine in visualLines)
         {
             var docLine = visualLine.FirstDocumentLine;
             if (!_map.TryGetDisplayNumber(docLine.LineNumber, out int displayNumber))

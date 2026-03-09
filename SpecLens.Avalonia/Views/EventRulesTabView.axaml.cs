@@ -16,6 +16,7 @@ using AvaloniaEdit.Editing;
 using AvaloniaEdit.Folding;
 using AvaloniaEdit.Rendering;
 using AvaloniaEdit.TextMate;
+using JdeClient.Core.Models;
 using ReactiveUI;
 using ReactiveUI.Avalonia;
 using SpecLens.Avalonia.Services;
@@ -31,8 +32,8 @@ public partial class EventRulesTabView : ReactiveUserControl<EventRulesTabViewMo
     private const double EditorFontStep = 1;
     private EventRulesTabViewModel? _viewModel;
     private readonly IAppSettingsService? _settingsService = App.GetService<IAppSettingsService>();
-    private readonly EventRulesLineNumberMargin _lineNumberMargin = new();
     private readonly EventRulesFoldingStrategy _foldingStrategy = new();
+    private readonly EventRulesLineNumberMargin _eventRulesLineNumberMargin = new();
     private readonly RegistryOptions _cTextMateRegistry = new(ThemeName.DarkPlus);
     private TextMate.Installation? _headerCTextMateInstallation;
     private TextMate.Installation? _sourceCTextMateInstallation;
@@ -51,9 +52,10 @@ public partial class EventRulesTabView : ReactiveUserControl<EventRulesTabViewMo
         EventRulesEditor.TextArea.TextView.PointerWheelChanged += OnEditorPointerWheelChanged;
         HeaderCodeEditor.TextArea.TextView.PointerWheelChanged += OnEditorPointerWheelChanged;
         SourceCodeEditor.TextArea.TextView.PointerWheelChanged += OnEditorPointerWheelChanged;
+        MetadataTabs.AddHandler(InputElement.PointerPressedEvent, OnMetadataTabsPointerPressed, RoutingStrategies.Tunnel);
         EventRulesEditor.ShowLineNumbers = false;
+        EventRulesEditor.TextArea.LeftMargins.Insert(0, _eventRulesLineNumberMargin);
         _foldingManager = FoldingManager.Install(EventRulesEditor.TextArea);
-        InsertLineNumberMargins();
         UpdateCodeEditorLayoutHeights();
         ApplySyntaxTheme();
         EventRulesSyntaxTheme.ThemeChanged += OnSyntaxThemeChanged;
@@ -267,8 +269,8 @@ public partial class EventRulesTabView : ReactiveUserControl<EventRulesTabViewMo
 
     private void RefreshEditorOverlays()
     {
-        _lineNumberMargin.RebuildLineNumberMap();
         _foldingStrategy.UpdateFoldings(_foldingManager, EventRulesEditor.Document);
+        _eventRulesLineNumberMargin.RebuildLineNumberMap();
     }
 
     private void OnEditorPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -383,6 +385,28 @@ public partial class EventRulesTabView : ReactiveUserControl<EventRulesTabViewMo
     private void OnCodeExpanderToggled(object? sender, RoutedEventArgs e)
     {
         UpdateCodeEditorLayoutHeights();
+    }
+
+    private void OnMetadataTabsPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_viewModel == null || e.Source is not Visual sourceVisual)
+        {
+            return;
+        }
+
+        var listBoxItem = sourceVisual as ListBoxItem ?? sourceVisual.FindAncestorOfType<ListBoxItem>();
+        if (listBoxItem?.DataContext is not JdeSpecMetadataSection section)
+        {
+            return;
+        }
+
+        if (!ReferenceEquals(section, _viewModel.SelectedMetadataSection))
+        {
+            return;
+        }
+
+        _viewModel.SelectedMetadataSection = null;
+        e.Handled = true;
     }
 
     private void UpdateCodeEditorLayoutHeights()
@@ -698,20 +722,6 @@ public partial class EventRulesTabView : ReactiveUserControl<EventRulesTabViewMo
         }
 
         return false;
-    }
-
-    private void InsertLineNumberMargins()
-    {
-        var margins = EventRulesEditor.TextArea.LeftMargins;
-        for (int i = margins.Count - 1; i >= 0; i--)
-        {
-            if (margins[i] is LineNumberMargin)
-            {
-                margins.RemoveAt(i);
-            }
-        }
-
-        margins.Insert(0, _lineNumberMargin);
     }
 
     private MainWindowViewModel? FindMainWindowViewModel()

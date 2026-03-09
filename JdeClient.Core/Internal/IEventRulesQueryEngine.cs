@@ -24,6 +24,11 @@ internal interface IEventRulesQueryEngine
     JdeEventRulesNode GetApplicationEventRulesTree(string objectName);
 
     /// <summary>
+    /// Retrieve structured spec metadata for an interactive application (APPL).
+    /// </summary>
+    JdeInteractiveApplicationSpec GetInteractiveApplicationSpec(string objectName);
+
+    /// <summary>
     /// Build the event rules tree for a batch application/report (UBE).
     /// </summary>
     JdeEventRulesNode GetReportEventRulesTree(string objectName);

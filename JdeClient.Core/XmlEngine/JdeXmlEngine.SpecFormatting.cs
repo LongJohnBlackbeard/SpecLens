@@ -69,7 +69,7 @@ public partial class JdeXmlEngine
                 continue;
             }
 
-            var sourceLabel = ResolveEventOperandLabel(fromElement, dataItemHint);
+            var sourceLabel = ResolveEventOperandLabel(fromElement, dataItemHint, defaultQualifier: "BF");
             var targetLabel = ResolveTableColumnLabel(toElement, ddTitlesByItem);
             var paramLine = FormatFileIoParamLine(copyWord, sourceLabel, targetLabel);
             lines.Add($"\t{paramLine}");
@@ -106,7 +106,7 @@ public partial class JdeXmlEngine
                 continue;
             }
 
-            var eventLabel = ResolveEventOperandLabel(valueElement, qualifierHint: null);
+            var eventLabel = ResolveEventOperandLabel(valueElement, qualifierHint: null, defaultQualifier: "BF");
             var paramLine = FormatBusinessFunctionParamLine(copyWord, eventLabel, parameterLabel);
             lines.Add($"\t{paramLine}");
         }
@@ -201,29 +201,53 @@ public partial class JdeXmlEngine
         return $"{title} [{dict}]";
     }
 
-    private string ResolveEventOperandLabel(XElement operandElement, string? qualifierHint)
+    private string ResolveEventOperandLabel(XElement operandElement, string? qualifierHint, string? defaultQualifier = null)
     {
-        // Preserve qualifiers from XML hints (e.g., BF/VA/SV/CO) when possible.
         var (qualifier, remainder) = SplitQualifier(qualifierHint ?? string.Empty);
-        var defaultQualifier = qualifier;
+        var effectiveQualifier = qualifier;
 
         switch (operandElement.Name.LocalName)
         {
             case "DSOBJMember":
-                var memberLabel = ResolveDataStructureMemberLabel(operandElement) ?? remainder ?? "Member";
-                return PrefixQualifier(defaultQualifier ?? "BF", memberLabel);
+                var memberLabel = ResolveDataStructureMemberLabel(operandElement);
+                if (!string.IsNullOrWhiteSpace(remainder))
+                {
+                    string? alias = ResolveDataStructureItem(operandElement)?.Alias;
+                    return PrefixQualifierIfNeeded(effectiveQualifier ?? defaultQualifier, EnsureAliasSuffix(remainder, alias));
+                }
+
+                return PrefixQualifierIfNeeded(effectiveQualifier ?? defaultQualifier, memberLabel ?? "Member");
             case "DSOBJVariable":
-                var variableId = operandElement.Attribute("idVariable")?.Value;
-                var variableName = TryGetEventVariableName(variableId) ?? remainder ?? "Variable";
-                return PrefixQualifier(defaultQualifier ?? "VA", variableName);
+                return ResolveVariableOperandLabel(operandElement, remainder, effectiveQualifier ?? "VA");
             case "DSOBJSystemVariable":
                 var systemValue = remainder ?? operandElement.Attribute("idVariable")?.Value ?? "SystemVariable";
-                return PrefixQualifier(defaultQualifier ?? "SV", systemValue);
+                return PrefixQualifierIfNeeded(effectiveQualifier ?? "SV", systemValue);
             case "DSOBJConstant":
                 var constantValue = remainder ?? operandElement.Attribute("idConstant")?.Value ?? "Constant";
-                return PrefixQualifier(defaultQualifier ?? "CO", constantValue);
+                return PrefixQualifierIfNeeded(effectiveQualifier ?? "CO", constantValue);
+            case "DSOBJBSTableColumn":
+                return ResolveBusinessViewColumnLabel(operandElement, remainder, effectiveQualifier ?? "BC");
+            case "DSOBJTableColumn":
+                return ResolveTableColumnOperandLabel(operandElement, remainder, effectiveQualifier);
+            case "DSOBJGridColumn":
+                return ResolveControlOperandLabel(
+                    operandElement,
+                    remainder,
+                    effectiveQualifier ?? "GC",
+                    "idObject");
+            case "DSOBJFormControl":
+                return ResolveControlOperandLabel(
+                    operandElement,
+                    remainder,
+                    effectiveQualifier ?? "FC",
+                    "idObject");
             case "DSOBJLiteral":
                 return FormatLiteralValue(operandElement);
+            case "DSOBJExpression":
+                return remainder ?? operandElement.Descendants()
+                    .Attributes("text")
+                    .FirstOrDefault()?.Value
+                    ?? operandElement.Value;
             default:
                 return remainder ?? operandElement.Value;
         }
@@ -254,6 +278,114 @@ public partial class JdeXmlEngine
         }
 
         return $"{qualifier} {value}";
+    }
+
+    private string ResolveVariableOperandLabel(XElement operandElement, string? fallback, string qualifier)
+    {
+        string? variableId = operandElement.Attribute("idVariable")?.Value;
+        string? alias = operandElement.Attribute("szDict")?.Value;
+        string? variableName = TryGetEventVariableName(variableId);
+        string value = EnsureAliasSuffix(
+            variableName ?? fallback ?? alias ?? "Variable",
+            alias);
+        return PrefixQualifierIfNeeded(qualifier, value);
+    }
+
+    private string ResolveBusinessViewColumnLabel(XElement operandElement, string? fallback, string qualifier)
+    {
+        var (tableName, alias) = GetDbRefInfo(operandElement);
+        string baseLabel = GetDataDictionaryTitle(alias) ??
+                           ExtractReadableOperandName(fallback) ??
+                           alias ??
+                           "Column";
+        string tableLabel = string.IsNullOrWhiteSpace(tableName) ? string.Empty : $" ({tableName}.0)";
+        string aliasLabel = string.IsNullOrWhiteSpace(alias) ? string.Empty : $" [{alias}]";
+        return $"{qualifier} {baseLabel}{tableLabel}{aliasLabel}".Trim();
+    }
+
+    private string ResolveTableColumnOperandLabel(XElement operandElement, string? fallback, string? qualifier)
+    {
+        var (tableName, alias) = GetDbRefInfo(operandElement);
+        string baseLabel = GetDataDictionaryTitle(alias) ??
+                           ExtractReadableOperandName(fallback) ??
+                           alias ??
+                           "Column";
+        string tableLabel = string.IsNullOrWhiteSpace(tableName) ? string.Empty : $" ({tableName})";
+        string aliasLabel = string.IsNullOrWhiteSpace(alias) ? string.Empty : $" [{alias}]";
+        string value = $"{baseLabel}{tableLabel}{aliasLabel}".Trim();
+        return PrefixQualifierIfNeeded(qualifier, value);
+    }
+
+    private static string ResolveControlOperandLabel(
+        XElement operandElement,
+        string? fallback,
+        string qualifier,
+        string idAttributeName)
+    {
+        string? label = string.IsNullOrWhiteSpace(fallback)
+            ? operandElement.Attribute(idAttributeName)?.Value
+            : fallback;
+        return PrefixQualifierIfNeeded(qualifier, label ?? "Control");
+    }
+
+    private string? GetDataDictionaryTitle(string? alias)
+    {
+        if (_specResolver == null || string.IsNullOrWhiteSpace(alias))
+        {
+            return null;
+        }
+
+        return _specResolver.GetDataDictionaryTitles(new[] { alias })
+            .TryGetValue(alias, out string? title)
+            ? title
+            : null;
+    }
+
+    private static (string? TableName, string? Alias) GetDbRefInfo(XElement operandElement)
+    {
+        XElement? dbRef = operandElement.Descendants()
+            .FirstOrDefault(element => element.Name.LocalName.Equals("Dbref", StringComparison.OrdinalIgnoreCase));
+        return (dbRef?.Attribute("szTable")?.Value, dbRef?.Attribute("szDict")?.Value);
+    }
+
+    private static string ExtractReadableOperandName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var (_, remainder) = SplitQualifier(value);
+        string normalized = remainder.Trim();
+        normalized = System.Text.RegularExpressions.Regex.Replace(normalized, @"\s+\[[^\]]+\]\s*$", string.Empty);
+        normalized = System.Text.RegularExpressions.Regex.Replace(normalized, @"\s+\([^)]+\)\s*$", string.Empty);
+        normalized = System.Text.RegularExpressions.Regex.Replace(normalized, @"\s+\([^)]+\)\s*$", string.Empty);
+        return normalized.Trim();
+    }
+
+    private static string EnsureAliasSuffix(string? label, string? alias)
+    {
+        string normalized = label?.Trim() ?? string.Empty;
+        if (normalized.Length == 0 || string.IsNullOrWhiteSpace(alias))
+        {
+            return normalized;
+        }
+
+        return normalized.Contains($"[{alias}]", StringComparison.OrdinalIgnoreCase)
+            ? normalized
+            : $"{normalized} [{alias}]";
+    }
+
+    private static string PrefixQualifierIfNeeded(string? qualifier, string value)
+    {
+        if (string.IsNullOrWhiteSpace(qualifier))
+        {
+            return value;
+        }
+
+        return value.StartsWith($"{qualifier} ", StringComparison.OrdinalIgnoreCase)
+            ? value
+            : $"{qualifier} {value}";
     }
 
     private DataStructureTemplate? GetTemplate(string templateName)
