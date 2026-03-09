@@ -114,8 +114,12 @@ public static class JdeStructures
         BusFunc = 1,
         BusView = 2,
         Dstmpl = 9,
+        FdaSpec = 10,
+        FdaText = 11,
         GbrLink = 12,
-        GbrSpec = 13
+        GbrSpec = 13,
+        RdaSpec = 23,
+        RdaText = 24
     }
 
     public enum JdeSpecLocation

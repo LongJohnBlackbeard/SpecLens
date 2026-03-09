@@ -114,6 +114,30 @@ public class TableLayoutTests
     }
 
     [Test]
+    public async Task ReadValueByColumn_BlobField_ReturnsDescriptorPointer()
+    {
+        var blobField = new TableField("FDABLOB", TableFieldType.BlobValue, 16, 12, "FDABLOB");
+        var fields = new Dictionary<string, TableField>(StringComparer.OrdinalIgnoreCase) { ["FDABLOB"] = blobField };
+        var columns = new Dictionary<string, TableField>(StringComparer.OrdinalIgnoreCase) { ["FDABLOB"] = blobField };
+        var layout = new TableLayout("TEST", 64, fields, columns);
+
+        IntPtr buffer = Marshal.AllocHGlobal(64);
+        try
+        {
+            var result = layout.ReadValueByColumn(buffer, "FDABLOB");
+            await Assert.That(result.Value is TableBlobValue).IsTrue();
+
+            var blobValue = (TableBlobValue)result.Value!;
+            await Assert.That(blobValue.DescriptorPointer).IsEqualTo(IntPtr.Add(buffer, 16));
+            await Assert.That(blobValue.DescriptorLength).IsEqualTo(12);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    [Test]
     public async Task TryGetField_ReturnsFalse_WhenMissing()
     {
         var fields = new Dictionary<string, TableField>(StringComparer.OrdinalIgnoreCase);
@@ -162,7 +186,7 @@ public class TableLayoutTests
     public async Task ReadValueByColumn_DefaultFieldType_ReturnsEmpty()
     {
         // Create a field with a type value that doesn't match any known cases
-        // TableFieldType only has 5 values (0-4), so we need to test the default case
+        // TableFieldType only has 6 values (0-5), so we need to test the default case
         // However the enum is exhaustive, so the default path would only be hit
         // if the enum was extended. We verify the existing JCharSingle path instead.
         var singleField = new TableField("FLAG", TableFieldType.JCharSingle, 0, 1, "FLAG");

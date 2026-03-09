@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Collections.Generic;
@@ -21,7 +22,7 @@ namespace JdeClient.Core.Internal;
 /// Loads event rules metadata, XML, and decoded lines from JDE spec data.
 /// </summary>
 [ExcludeFromCodeCoverage]
-internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
+internal sealed partial class EventRulesQueryEngine : IEventRulesQueryEngine
 {
     private readonly HUSER _hUser;
     private readonly JdeClientOptions _options;
@@ -29,6 +30,8 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
     private const int ProductTypeRda = 2;
     private const int ProductTypeNer = 3;
     private const int ProductTypeTer = 4;
+    private const int FdaRecordTypeControlDefinition = 3;
+    private const int RdaRecordTypeSectionDefinition = 2;
     private const int SpecKeyBusFuncByObject = 2;
     private const int SpecKeyDataStructureByTemplate = 1;
     private const int MaxBusinessFunctionPayloadBytes = 32 * 1024 * 1024;
@@ -151,7 +154,7 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
     /// </summary>
     public JdeEventRulesNode GetApplicationEventRulesTree(string objectName)
     {
-        return GetEventRulesLinkTree(objectName, ProductTypeFda);
+        return BuildInteractiveApplicationTree(GetInteractiveApplicationSpec(objectName));
     }
 
     /// <summary>
@@ -643,7 +646,7 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
                 {
                     try
                     {
-                        string? xml = TryConvertSpecDataToXmlDirect(hConvert, ref singleData);
+                        string? xml = TryConvertSpecDataToXml(hConvert, ref singleData);
                         if (!string.IsNullOrWhiteSpace(xml))
                         {
                             AddXmlToBuilders(buildersByKey, orderedBuilders, xml, templateName);
@@ -679,7 +682,7 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
                 }
                 try
                 {
-                    string? xml = TryConvertSpecDataToXmlDirect(hConvert, ref specData);
+                    string? xml = TryConvertSpecDataToXml(hConvert, ref specData);
                     if (string.IsNullOrWhiteSpace(xml))
                     {
                         continue;
@@ -842,7 +845,7 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
                 {
                     try
                     {
-                        string? xml = TryConvertSpecDataToXmlDirect(hConvert, ref singleData);
+                        string? xml = TryConvertSpecDataToXml(hConvert, ref singleData);
                         if (!string.IsNullOrWhiteSpace(xml))
                         {
                             AddXmlToBuilders(buildersByKey, orderedBuilders, xml, templateName);
@@ -881,7 +884,7 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
 
                 try
                 {
-                    string? xml = TryConvertSpecDataToXmlDirect(hConvert, ref specData);
+                    string? xml = TryConvertSpecDataToXml(hConvert, ref specData);
                     if (string.IsNullOrWhiteSpace(xml))
                     {
                         continue;
@@ -909,6 +912,19 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
         }
 
         return orderedBuilders;
+    }
+
+    private bool TryOpenLocalSpecHandleIndexed(JdeSpecFileType specType, int indexId, out IntPtr hSpec)
+    {
+        hSpec = IntPtr.Zero;
+        int result = JdeSpecEncapApi.jdeSpecOpenLocalIndexed(out hSpec, _hUser, specType, new ID(indexId));
+        if (result == JDESPEC_SUCCESS && hSpec != IntPtr.Zero)
+        {
+            return true;
+        }
+
+        int localResult = JdeSpecEncapApi.jdeSpecOpenLocal(out hSpec, _hUser, specType);
+        return localResult == JDESPEC_SUCCESS && hSpec != IntPtr.Zero;
     }
 
     private bool TryOpenSpecHandle(JdeSpecFileType specType, string tableName, string? fallbackTableName, out IntPtr hSpec)
@@ -1816,6 +1832,43 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
         });
     }
 
+    private static int ReadSpecRecordInt32(TableLayout? layout, IntPtr rdbRecord, string columnName)
+    {
+        if (layout == null || rdbRecord == IntPtr.Zero)
+        {
+            return 0;
+        }
+
+        var value = layout.ReadValueByColumn(rdbRecord, columnName).Value;
+        return value switch
+        {
+            null => 0,
+            int intValue => intValue,
+            short shortValue => shortValue,
+            ushort ushortValue => ushortValue,
+            uint uintValue => unchecked((int)uintValue),
+            long longValue => unchecked((int)longValue),
+            string text => int.TryParse(text, out int parsed) ? parsed : 0,
+            _ => int.TryParse(value.ToString(), out int parsed) ? parsed : 0
+        };
+    }
+
+    private static string ReadSpecRecordMathNumeric(TableLayout? layout, IntPtr rdbRecord, string columnName)
+    {
+        if (layout == null || rdbRecord == IntPtr.Zero)
+        {
+            return string.Empty;
+        }
+
+        var value = layout.ReadValueByColumn(rdbRecord, columnName).Value;
+        return value switch
+        {
+            null => string.Empty,
+            string text => text,
+            _ => value.ToString() ?? string.Empty
+        };
+    }
+
     private static string ExtractBusinessFunctionSourceCode(byte[] payload, string functionName, string objectName)
     {
         if (payload.Length == 0)
@@ -2652,59 +2705,57 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
         {
             return null;
         }
-        string? directXml = TryConvertSpecDataToXmlDirect(hConvert, ref specData);
-        if (!string.IsNullOrWhiteSpace(directXml))
+
+        // Direct conversion is safe for fetched spec records; avoid it for raw packed blobs
+        // synthesized from table BLOB columns because those calls can AV.
+        bool canTryDirect =
+            specData.DataType != JdeSpecDataType.RawBlob ||
+            specData.RdbRecord != IntPtr.Zero ||
+            specData.SpecInfo != IntPtr.Zero;
+        if (canTryDirect)
         {
-            return directXml;
+            var xmlData = new JdeSpecData();
+            try
+            {
+                int directResult = JdeSpecEncapApi.jdeSpecConvertToXML(hConvert, ref specData, ref xmlData);
+                if (directResult == JDESPEC_SUCCESS && xmlData.SpecData != IntPtr.Zero)
+                {
+                    return ReadUtf8Xml(xmlData);
+                }
+
+                LogSpecConvertFailure(hConvert, directResult, specData.DataType);
+            }
+            finally
+            {
+                if (xmlData.SpecData != IntPtr.Zero)
+                {
+                    JdeSpecEncapApi.jdeSpecFreeData(ref xmlData);
+                }
+            }
         }
+
         int insertResult = JdeSpecEncapApi.jdeSpecInsertRecordToConsolidatedBuffer(hConvert, ref specData);
         if (insertResult != JDESPEC_SUCCESS)
         {
             LogSpecDebug($"[ER] InsertRecord failed: {insertResult} ({GetSpecResultText(insertResult)})");
             return null;
         }
-        var xmlData = new JdeSpecData();
+        var consolidatedXmlData = new JdeSpecData();
         try
         {
-            int result = JdeSpecEncapApi.jdeSpecConvertConsolidatedToXML(hConvert, ref xmlData);
-            if (result != JDESPEC_SUCCESS || xmlData.SpecData == IntPtr.Zero)
+            int result = JdeSpecEncapApi.jdeSpecConvertConsolidatedToXML(hConvert, ref consolidatedXmlData);
+            if (result != JDESPEC_SUCCESS || consolidatedXmlData.SpecData == IntPtr.Zero)
             {
                 LogSpecConvertFailure(hConvert, result, specData.DataType);
                 return null;
             }
-            return ReadUtf8Xml(xmlData);
+            return ReadUtf8Xml(consolidatedXmlData);
         }
         finally
         {
-            if (xmlData.SpecData != IntPtr.Zero)
+            if (consolidatedXmlData.SpecData != IntPtr.Zero)
             {
-                JdeSpecEncapApi.jdeSpecFreeData(ref xmlData);
-            }
-        }
-    }
-
-    private string? TryConvertSpecDataToXmlDirect(IntPtr hConvert, ref JdeSpecData specData)
-    {
-        if (specData.SpecData == IntPtr.Zero || specData.DataLen == 0)
-        {
-            return null;
-        }
-        var xmlData = new JdeSpecData();
-        try
-        {
-            int result = JdeSpecEncapApi.jdeSpecConvertToXML_UTF16(hConvert, ref specData, ref xmlData);
-            if (result != JDESPEC_SUCCESS || xmlData.SpecData == IntPtr.Zero)
-            {
-                LogSpecConvertFailure(hConvert, result, specData.DataType);
-                return null;
-            }
-            return ReadUnicodeXml(xmlData);
-        }
-        finally
-        {
-            if (xmlData.SpecData != IntPtr.Zero)
-            {
-                JdeSpecEncapApi.jdeSpecFreeData(ref xmlData);
+                JdeSpecEncapApi.jdeSpecFreeData(ref consolidatedXmlData);
             }
         }
     }
@@ -2725,21 +2776,6 @@ internal sealed class EventRulesQueryEngine : IEventRulesQueryEngine
         return Marshal.PtrToStringUTF8(xmlData.SpecData);
     }
 
-    private static string? ReadUnicodeXml(JdeSpecData xmlData)
-    {
-        if (xmlData.SpecData == IntPtr.Zero)
-        {
-            return null;
-        }
-        int byteLength = xmlData.DataLen > int.MaxValue ? int.MaxValue : (int)xmlData.DataLen;
-        if (byteLength > 0)
-        {
-            var buffer = new byte[byteLength];
-            Marshal.Copy(xmlData.SpecData, buffer, 0, buffer.Length);
-            return Encoding.Unicode.GetString(buffer).TrimEnd('\0');
-        }
-        return Marshal.PtrToStringUni(xmlData.SpecData);
-    }
 
     private void LogSpecConvertFailure(IntPtr hConvert, int result, JdeSpecDataType attemptType)
     {
@@ -3547,7 +3583,15 @@ private static bool TryUncompressNative(byte[] blob, out byte[] uncompressed)
         {
             return BuildRootNode(objectName, Array.Empty<JdeEventRulesNode>());
         }
-        var children = BuildEventRulesLinkNodes(rows);
+
+        ApplicationTreeMetadata metadata = productType switch
+        {
+            ProductTypeFda => BuildApplicationTreeMetadata(objectName, rows),
+            ProductTypeRda => BuildReportTreeMetadata(objectName, rows),
+            _ => ApplicationTreeMetadata.Empty
+        };
+
+        var children = BuildEventRulesLinkNodes(rows, productType, metadata);
         return BuildRootNode(objectName, children);
     }
 
@@ -3627,7 +3671,1181 @@ private static bool TryUncompressNative(byte[] blob, out byte[] uncompressed)
         return rows;
     }
 
-    private static IReadOnlyList<JdeEventRulesNode> BuildEventRulesLinkNodes(IReadOnlyList<EventRulesLinkRow> rows)
+    private ApplicationTreeMetadata BuildApplicationTreeMetadata(
+        string objectName,
+        IReadOnlyList<EventRulesLinkRow> rows)
+    {
+        var formDescriptions = LoadApplicationFormDescriptions(objectName);
+        var controlMetadata = LoadApplicationControlMetadata(objectName, rows);
+        return new ApplicationTreeMetadata(
+            objectName,
+            formDescriptions,
+            controlMetadata,
+            new Dictionary<EventRulesSectionKey, ReportSectionMetadata>());
+    }
+
+    private ApplicationTreeMetadata BuildReportTreeMetadata(
+        string objectName,
+        IReadOnlyList<EventRulesLinkRow> rows)
+    {
+        var sectionMetadata = LoadReportSectionMetadata(objectName, rows);
+        return new ApplicationTreeMetadata(
+            objectName,
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            new Dictionary<EventRulesControlKey, ApplicationControlMetadata>(),
+            sectionMetadata);
+    }
+
+    private IReadOnlyDictionary<string, string> LoadApplicationFormDescriptions(string objectName)
+    {
+        var descriptions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(objectName))
+        {
+            return descriptions;
+        }
+
+        HREQUEST hRequest = OpenTable(F9865Structures.TableName, new ID(F9865Structures.IdObjectNameFormName));
+        TableLayout? layout = _options.UseRowLayoutTables
+            ? TableLayoutLoader.Load(F9865Structures.TableName)
+            : null;
+        IntPtr rowBuffer = IntPtr.Zero;
+        try
+        {
+            ApplyStringSelection(
+                hRequest,
+                F9865Structures.TableName,
+                F9865Structures.Columns.ObjectName,
+                objectName);
+
+            int selectResult = JDB_SelectKeyed(hRequest, new ID(0), IntPtr.Zero, 0);
+            if (selectResult != JDEDB_PASSED)
+            {
+                return descriptions;
+            }
+
+            if (layout != null && layout.Size > 0)
+            {
+                rowBuffer = Marshal.AllocHGlobal(layout.Size + 64);
+            }
+
+            while (true)
+            {
+                int fetchResult = JDB_Fetch(hRequest, rowBuffer, 0);
+                if (fetchResult == JDEDB_NO_MORE_DATA)
+                {
+                    break;
+                }
+
+                if (fetchResult == JDEDB_SKIPPED || fetchResult != JDEDB_PASSED)
+                {
+                    continue;
+                }
+
+                string formName = ReadColumnString(
+                    layout,
+                    rowBuffer,
+                    hRequest,
+                    F9865Structures.TableName,
+                    F9865Structures.Columns.FormName,
+                    11);
+                if (string.IsNullOrWhiteSpace(formName))
+                {
+                    continue;
+                }
+
+                string description = ReadColumnString(
+                    layout,
+                    rowBuffer,
+                    hRequest,
+                    F9865Structures.TableName,
+                    F9865Structures.Columns.Description,
+                    61);
+                if (string.IsNullOrWhiteSpace(description))
+                {
+                    continue;
+                }
+
+                descriptions[formName] = description;
+            }
+        }
+        finally
+        {
+            JDB_CloseTable(hRequest);
+            if (rowBuffer != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(rowBuffer);
+            }
+        }
+
+        return descriptions;
+    }
+
+    private bool TrySelectSpecByObjectName(IntPtr hSpec, string objectName, string scope)
+    {
+        if (hSpec == IntPtr.Zero || string.IsNullOrWhiteSpace(objectName))
+        {
+            return false;
+        }
+
+        var key = new JdeSpecKeyObjectName
+        {
+            ObjectName = new NID(objectName)
+        };
+        return TrySelectSpecKey(hSpec, key, scope);
+    }
+
+    private static bool IsReportSectionMetadataRecordType(int recordType)
+    {
+        return recordType == 0 || recordType == RdaRecordTypeSectionDefinition;
+    }
+
+    private IReadOnlyDictionary<EventRulesControlKey, ApplicationControlMetadata> LoadApplicationControlMetadata(
+        string objectName,
+        IReadOnlyList<EventRulesLinkRow> rows)
+    {
+        var metadataByKey = new Dictionary<EventRulesControlKey, ApplicationControlMetadata>();
+        if (string.IsNullOrWhiteSpace(objectName) || rows.Count == 0)
+        {
+            return metadataByKey;
+        }
+
+        var requiredKeys = rows
+            .Where(row => row.ControlId >= 0 && !string.IsNullOrWhiteSpace(row.FormName))
+            .Select(row => new EventRulesControlKey(NormalizeFormKey(row.FormName), row.ControlId))
+            .Distinct()
+            .ToHashSet();
+        if (requiredKeys.Count == 0)
+        {
+            return metadataByKey;
+        }
+
+        var descriptorCandidates = new Dictionary<EventRulesControlKey, ApplicationControlDescriptor>();
+        var actualDescriptorCandidates = new Dictionary<EventRulesControlKey, ApplicationControlDescriptor>();
+        var requiredControlIdsByForm = requiredKeys
+            .GroupBy(key => key.FormName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(key => key.ControlId).ToHashSet(),
+                StringComparer.OrdinalIgnoreCase);
+        var relevantFormNames = requiredControlIdsByForm.Keys
+            .SelectMany(formName => new[] { formName, GetAlternateApplicationFormName(formName) })
+            .Where(formName => !string.IsNullOrWhiteSpace(formName))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        TableLayout? layout = _options.UseRowLayoutTables
+            ? TableLayoutLoader.Load(F98751Structures.TableName)
+            : null;
+        if (!TryOpenSpecHandle(JdeSpecFileType.FdaSpec, F98751Structures.TableName, fallbackTableName: null, out IntPtr hSpec))
+        {
+            return metadataByKey;
+        }
+        IntPtr hConvert = IntPtr.Zero;
+        int fetchedRows = 0;
+        int objectMatchedRows = 0;
+        int formMatchedRows = 0;
+        int xmlRows = 0;
+        int xmlFailedRows = 0;
+        int resolvedRows = 0;
+        int descriptorRows = 0;
+        bool selectedByObject = false;
+        var recordTypeCounts = new Dictionary<int, int>();
+        try
+        {
+            int convertInit = JdeSpecEncapApi.jdeSpecInitXMLConvertHandle(out hConvert, JdeSpecFileType.FdaSpec);
+            if (convertInit != JDESPEC_SUCCESS || hConvert == IntPtr.Zero)
+            {
+                LogSpecDebug($"[APPLMETA] {objectName}: jdeSpecInitXMLConvertHandle failed ({convertInit})");
+                return metadataByKey;
+            }
+
+            selectedByObject = TrySelectSpecByObjectName(hSpec, objectName, "[APPLMETA]");
+
+            while (true)
+            {
+                var specData = new JdeSpecData();
+                int fetchResult = JdeSpecEncapApi.jdeSpecFetch(hSpec, ref specData);
+                if (fetchResult != JDESPEC_SUCCESS)
+                {
+                    break;
+                }
+
+                try
+                {
+                    fetchedRows++;
+
+                    string rowObjectName = ReadSpecRecordString(
+                        layout,
+                        specData.RdbRecord,
+                        F98751Structures.Columns.ObjectName);
+                    if (!string.IsNullOrWhiteSpace(rowObjectName) &&
+                        !string.Equals(rowObjectName, objectName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                    objectMatchedRows++;
+
+                    string? xml = TryConvertSpecDataToXml(hConvert, ref specData);
+                    if (string.IsNullOrWhiteSpace(xml))
+                    {
+                        xmlFailedRows++;
+                        continue;
+                    }
+                    xmlRows++;
+
+                    string rowFormName = ReadSpecRecordString(
+                        layout,
+                        specData.RdbRecord,
+                        F98751Structures.Columns.FormName);
+                    int rowControlId = ReadSpecRecordInt32(
+                        layout,
+                        specData.RdbRecord,
+                        F98751Structures.Columns.ControlId);
+
+                    ReadApplicationRecordContext(
+                        layout,
+                        specData,
+                        xml,
+                        out int rowEventId,
+                        out int eventId3,
+                        out int rowRecordType);
+
+                    recordTypeCounts[rowRecordType] = recordTypeCounts.TryGetValue(rowRecordType, out int count)
+                        ? count + 1
+                        : 1;
+                    if (!IsApplicationMetadataRecordType(rowRecordType))
+                    {
+                        continue;
+                    }
+
+                    if (!TryParseApplicationControlDescriptor(xml, rowRecordType, out ApplicationControlDescriptor descriptor))
+                    {
+                        continue;
+                    }
+                    descriptorRows++;
+
+                    if (TryResolveApplicationActualControlKey(
+                            rowFormName,
+                            rowControlId,
+                            xml,
+                            relevantFormNames,
+                            out EventRulesControlKey actualControlKey))
+                    {
+                        int actualScore = GetApplicationControlDescriptorScore(rowEventId, eventId3, descriptor);
+                        if (!actualDescriptorCandidates.TryGetValue(actualControlKey, out ApplicationControlDescriptor? existingActual) ||
+                            actualScore > existingActual.Score)
+                        {
+                            actualDescriptorCandidates[actualControlKey] = descriptor with { Score = actualScore };
+                        }
+                    }
+
+                    if (!TryResolveApplicationControlKey(
+                            rowFormName,
+                            rowControlId,
+                            xml,
+                            requiredControlIdsByForm,
+                            out EventRulesControlKey controlKey))
+                    {
+                        continue;
+                    }
+                    formMatchedRows++;
+                    resolvedRows++;
+
+                    int score = GetApplicationControlDescriptorScore(rowEventId, eventId3, descriptor);
+                    if (!descriptorCandidates.TryGetValue(controlKey, out ApplicationControlDescriptor? existing) ||
+                        score > existing.Score)
+                    {
+                        descriptorCandidates[controlKey] = descriptor with { Score = score };
+                    }
+                }
+                finally
+                {
+                    JdeSpecEncapApi.jdeSpecFreeData(ref specData);
+                }
+            }
+        }
+        finally
+        {
+            if (hConvert != IntPtr.Zero)
+            {
+                JdeSpecEncapApi.jdeSpecClose(hConvert);
+            }
+            JdeSpecEncapApi.jdeSpecClose(hSpec);
+        }
+
+        var targetDescriptors = new Dictionary<EventRulesControlKey, ApplicationControlDescriptor>(descriptorCandidates);
+        foreach (var entry in actualDescriptorCandidates)
+        {
+            if (!entry.Value.IsGridContainer && !entry.Value.ParentControlId.HasValue)
+            {
+                continue;
+            }
+
+            if (!targetDescriptors.TryGetValue(entry.Key, out ApplicationControlDescriptor? existing) ||
+                entry.Value.Score > existing.Score)
+            {
+                targetDescriptors[entry.Key] = entry.Value;
+            }
+        }
+
+        foreach (var parentKey in actualDescriptorCandidates
+                     .Where(entry => entry.Value.ParentControlId.HasValue)
+                     .Select(entry => new EventRulesControlKey(entry.Key.FormName, entry.Value.ParentControlId!.Value))
+                     .Distinct())
+        {
+            if (!actualDescriptorCandidates.TryGetValue(parentKey, out ApplicationControlDescriptor? parentDescriptor))
+            {
+                continue;
+            }
+
+            if (!targetDescriptors.TryGetValue(parentKey, out ApplicationControlDescriptor? existing) ||
+                parentDescriptor.Score > existing.Score)
+            {
+                targetDescriptors[parentKey] = parentDescriptor;
+            }
+        }
+
+        if (targetDescriptors.Count == 0)
+        {
+            string recordTypeSummary = string.Join(
+                ",",
+                recordTypeCounts
+                    .OrderByDescending(entry => entry.Value)
+                    .ThenBy(entry => entry.Key)
+                    .Take(12)
+                    .Select(entry => $"{entry.Key}:{entry.Value}"));
+            LogSpecDebug(
+                $"[APPLMETA] {objectName}: fetched={fetchedRows}, objectMatched={objectMatchedRows}, formMatched={formMatchedRows}, selectedByObject={selectedByObject}, xml={xmlRows}, xmlFailed={xmlFailedRows}, resolved={resolvedRows}, parsed={descriptorRows}, candidates=0, recordTypes={recordTypeSummary}");
+            return metadataByKey;
+        }
+
+        var textIdSet = targetDescriptors.Values
+            .Where(candidate => candidate.TextId.HasValue)
+            .Select(candidate => candidate.TextId!.Value)
+            .Distinct()
+            .ToArray();
+        var textById = LoadApplicationTextById(objectName, textIdSet);
+        var dataDictionaryTitles = LoadApplicationDataDictionaryTitles(
+            targetDescriptors.Values,
+            textById);
+
+        foreach (var entry in targetDescriptors)
+        {
+            int? textId = entry.Value.TextId;
+            string? resolvedText = ResolveApplicationControlDisplayText(
+                textId,
+                entry.Value.Attributes,
+                textById,
+                dataDictionaryTitles);
+
+            string label = BuildApplicationControlLabel(entry.Key.ControlId, entry.Value, resolvedText);
+            string configuration = BuildApplicationControlConfiguration(
+                entry.Key.FormName,
+                entry.Value,
+                resolvedText);
+            metadataByKey[entry.Key] = new ApplicationControlMetadata(
+                label,
+                configuration,
+                entry.Value.DataStructureName,
+                entry.Value.ComponentTypeName,
+                textId,
+                entry.Value.ParentControlId,
+                entry.Value.DisplayOrder,
+                entry.Value.IsGridContainer);
+        }
+
+        LogSpecDebug(
+            $"[APPLMETA] {objectName}: fetched={fetchedRows}, objectMatched={objectMatchedRows}, formMatched={formMatchedRows}, selectedByObject={selectedByObject}, xml={xmlRows}, xmlFailed={xmlFailedRows}, resolved={resolvedRows}, parsed={descriptorRows}, candidates={targetDescriptors.Count}, labels={metadataByKey.Count}, actual={actualDescriptorCandidates.Count}");
+
+        return metadataByKey;
+    }
+
+    private IReadOnlyDictionary<int, string> LoadApplicationTextById(string objectName, IReadOnlyCollection<int> textIds)
+    {
+        var textById = new Dictionary<int, string>();
+        if (string.IsNullOrWhiteSpace(objectName) || textIds.Count == 0)
+        {
+            return textById;
+        }
+
+        var targetIds = textIds
+            .Where(id => id > 0)
+            .Distinct()
+            .ToHashSet();
+        if (targetIds.Count == 0)
+        {
+            return textById;
+        }
+
+        TableLayout? layout = _options.UseRowLayoutTables
+            ? TableLayoutLoader.Load(F98750Structures.TableName)
+            : null;
+        if (!TryOpenSpecHandle(JdeSpecFileType.FdaText, F98750Structures.TableName, fallbackTableName: null, out IntPtr hSpec))
+        {
+            return textById;
+        }
+        IntPtr hConvert = IntPtr.Zero;
+        int fetchedRows = 0;
+        int objectMatchedRows = 0;
+        int xmlRows = 0;
+        int xmlFailedRows = 0;
+        int matchedRows = 0;
+        int parsedRows = 0;
+        try
+        {
+            int convertInit = JdeSpecEncapApi.jdeSpecInitXMLConvertHandle(out hConvert, JdeSpecFileType.FdaText);
+            if (convertInit != JDESPEC_SUCCESS || hConvert == IntPtr.Zero)
+            {
+                LogSpecDebug($"[APPLTEXT] {objectName}: jdeSpecInitXMLConvertHandle failed ({convertInit})");
+                return textById;
+            }
+
+            TrySelectSpecByObjectName(hSpec, objectName, "[APPLTEXT]");
+
+            while (true)
+            {
+                var specData = new JdeSpecData();
+                int fetchResult = JdeSpecEncapApi.jdeSpecFetch(hSpec, ref specData);
+                if (fetchResult != JDESPEC_SUCCESS)
+                {
+                    break;
+                }
+
+                try
+                {
+                    fetchedRows++;
+                    string rowObjectName = ReadSpecRecordString(
+                        layout,
+                        specData.RdbRecord,
+                        F98750Structures.Columns.ObjectName);
+                    if (!string.IsNullOrWhiteSpace(rowObjectName) &&
+                        !string.Equals(rowObjectName, objectName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                    objectMatchedRows++;
+
+                    string? xml = TryConvertSpecDataToXml(hConvert, ref specData);
+                    if (string.IsNullOrWhiteSpace(xml))
+                    {
+                        xmlFailedRows++;
+                        continue;
+                    }
+                    xmlRows++;
+
+                    int textId = ReadSpecRecordInt32(
+                        layout,
+                        specData.RdbRecord,
+                        F98750Structures.Columns.TextId);
+                    if (textId <= 0)
+                    {
+                        TryReadTextIdFromRootAttribute(xml, out textId);
+                    }
+
+                    if (!targetIds.Contains(textId) || textById.ContainsKey(textId))
+                    {
+                        continue;
+                    }
+                    matchedRows++;
+
+                    if (TryParseFdaTextValue(xml, out string textValue))
+                    {
+                        textById[textId] = textValue;
+                        parsedRows++;
+                    }
+                }
+                finally
+                {
+                    JdeSpecEncapApi.jdeSpecFreeData(ref specData);
+                }
+            }
+        }
+        finally
+        {
+            if (hConvert != IntPtr.Zero)
+            {
+                JdeSpecEncapApi.jdeSpecClose(hConvert);
+            }
+            JdeSpecEncapApi.jdeSpecClose(hSpec);
+        }
+
+        LogSpecDebug(
+            $"[APPLTEXT] {objectName}: targetIds={targetIds.Count}, fetched={fetchedRows}, objectMatched={objectMatchedRows}, xml={xmlRows}, xmlFailed={xmlFailedRows}, matched={matchedRows}, parsed={parsedRows}, resolved={textById.Count}");
+
+        return textById;
+    }
+
+    private IReadOnlyDictionary<EventRulesSectionKey, ReportSectionMetadata> LoadReportSectionMetadata(
+        string objectName,
+        IReadOnlyList<EventRulesLinkRow> rows)
+    {
+        var sectionByKey = new Dictionary<EventRulesSectionKey, ReportSectionMetadata>();
+        if (string.IsNullOrWhiteSpace(objectName) || rows.Count == 0)
+        {
+            return sectionByKey;
+        }
+
+        var requiredKeys = rows
+            .Where(row => !string.IsNullOrWhiteSpace(row.FormName))
+            .Select(row => new EventRulesSectionKey(
+                NormalizeReportVersion(row.Version),
+                NormalizeReportSectionKey(row.FormName)))
+            .Where(key => !string.IsNullOrWhiteSpace(key.FormName))
+            .Distinct()
+            .ToHashSet();
+        if (requiredKeys.Count == 0)
+        {
+            return sectionByKey;
+        }
+
+        TableLayout? layout = _options.UseRowLayoutTables
+            ? TableLayoutLoader.Load(F98761Structures.TableName)
+            : null;
+        var candidates = new Dictionary<EventRulesSectionKey, ReportSectionDescriptor>();
+        if (!TryOpenSpecHandle(JdeSpecFileType.RdaSpec, F98761Structures.TableName, fallbackTableName: null, out IntPtr hSpec))
+        {
+            return sectionByKey;
+        }
+        IntPtr hConvert = IntPtr.Zero;
+        int fetchedRows = 0;
+        int objectMatchedRows = 0;
+        int directKeyRows = 0;
+        int xmlRows = 0;
+        int xmlFailedRows = 0;
+        int parsedRows = 0;
+        int matchedRows = 0;
+        bool selectedByObject = false;
+        try
+        {
+            int convertInit = JdeSpecEncapApi.jdeSpecInitXMLConvertHandle(out hConvert, JdeSpecFileType.RdaSpec);
+            if (convertInit != JDESPEC_SUCCESS || hConvert == IntPtr.Zero)
+            {
+                LogSpecDebug($"[UBEMETA] {objectName}: jdeSpecInitXMLConvertHandle failed ({convertInit})");
+                return sectionByKey;
+            }
+
+            selectedByObject = TrySelectSpecByObjectName(hSpec, objectName, "[UBEMETA]");
+
+            while (true)
+            {
+                var specData = new JdeSpecData();
+                int fetchResult = JdeSpecEncapApi.jdeSpecFetch(hSpec, ref specData);
+                if (fetchResult != JDESPEC_SUCCESS)
+                {
+                    break;
+                }
+
+                try
+                {
+                    fetchedRows++;
+
+                    string rowObjectName = ReadSpecRecordString(
+                        layout,
+                        specData.RdbRecord,
+                        F98761Structures.Columns.ObjectName);
+                    if (!string.IsNullOrWhiteSpace(rowObjectName) &&
+                        !string.Equals(rowObjectName, objectName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                    objectMatchedRows++;
+
+                    int rowEventId = ParseEventOrder(ReadSpecRecordMathNumeric(
+                        layout,
+                        specData.RdbRecord,
+                        F98761Structures.Columns.EventId));
+                    int rowRecordType = ParseEventOrder(ReadSpecRecordMathNumeric(
+                        layout,
+                        specData.RdbRecord,
+                        F98761Structures.Columns.RecordType));
+                    if (rowEventId != 0 || !IsReportSectionMetadataRecordType(rowRecordType))
+                    {
+                        continue;
+                    }
+
+                    string rowVersion = ReadSpecRecordString(
+                        layout,
+                        specData.RdbRecord,
+                        F98761Structures.Columns.Version);
+                    string rowSectionName = ReadSpecRecordString(
+                        layout,
+                        specData.RdbRecord,
+                        F98761Structures.Columns.FormName);
+                    var directSectionKey = new EventRulesSectionKey(
+                        NormalizeReportVersion(rowVersion),
+                        NormalizeReportSectionKey(rowSectionName));
+                    if (requiredKeys.Contains(directSectionKey))
+                    {
+                        directKeyRows++;
+                    }
+
+                    string? xml = TryConvertSpecDataToXml(hConvert, ref specData);
+                    if (string.IsNullOrWhiteSpace(xml) ||
+                        !TryParseReportSectionDescriptor(xml, out ReportSectionDescriptor descriptor))
+                    {
+                        xmlFailedRows++;
+                        continue;
+                    }
+                    xmlRows++;
+                    parsedRows++;
+
+                    string version = NormalizeReportVersion(rowVersion);
+                    if (TryReadVersionFromRootAttribute(xml, out string xmlVersion))
+                    {
+                        version = NormalizeReportVersion(xmlVersion);
+                    }
+
+                    string sectionKeyName = NormalizeReportSectionKey($"S{descriptor.SectionId}");
+                    if (string.IsNullOrWhiteSpace(sectionKeyName))
+                    {
+                        sectionKeyName = NormalizeReportSectionKey(rowSectionName);
+                    }
+
+                    var sectionKey = new EventRulesSectionKey(version, sectionKeyName);
+                    if (!requiredKeys.Contains(sectionKey))
+                    {
+                        continue;
+                    }
+
+                    matchedRows++;
+                    candidates[sectionKey] = descriptor;
+                }
+                finally
+                {
+                    JdeSpecEncapApi.jdeSpecFreeData(ref specData);
+                }
+            }
+        }
+        finally
+        {
+            if (hConvert != IntPtr.Zero)
+            {
+                JdeSpecEncapApi.jdeSpecClose(hConvert);
+            }
+            JdeSpecEncapApi.jdeSpecClose(hSpec);
+        }
+
+        if (candidates.Count == 0)
+        {
+            LogSpecDebug(
+                $"[UBEMETA] {objectName}: fetched={fetchedRows}, objectMatched={objectMatchedRows}, directKey={directKeyRows}, selectedByObject={selectedByObject}, xml={xmlRows}, xmlFailed={xmlFailedRows}, parsed={parsedRows}, matched={matchedRows}, candidates=0");
+            return sectionByKey;
+        }
+
+        var textKeys = candidates
+            .Where(entry => entry.Value.TextId.HasValue)
+            .Select(entry => new ReportTextKey(entry.Key.Version, entry.Value.TextId!.Value))
+            .Distinct()
+            .ToArray();
+        var textById = LoadReportTextById(objectName, textKeys);
+
+        foreach (var entry in candidates)
+        {
+            ReportSectionDescriptor descriptor = entry.Value;
+            string? resolvedName = null;
+            if (descriptor.TextId.HasValue)
+            {
+                textById.TryGetValue(
+                    new ReportTextKey(entry.Key.Version, descriptor.TextId.Value),
+                    out resolvedName);
+            }
+
+            string sectionName = string.IsNullOrWhiteSpace(resolvedName)
+                ? string.Empty
+                : resolvedName.Trim();
+            string sectionType = FormatReportSectionType(descriptor.SectionType);
+
+            sectionByKey[entry.Key] = new ReportSectionMetadata(
+                sectionName,
+                descriptor.SectionId,
+                sectionType,
+                (descriptor.PropertyFlags & 0x1) != 0,
+                (descriptor.PropertyFlags & 0x2) != 0,
+                (descriptor.PropertyFlags & 0x200) != 0,
+                (descriptor.StyleFlags & 0x1) != 0,
+                (descriptor.PropertyFlags & 0x4) != 0,
+                descriptor.Left,
+                descriptor.Top,
+                descriptor.Width,
+                descriptor.Height,
+                descriptor.BusinessViewName);
+        }
+
+        LogSpecDebug(
+            $"[UBEMETA] {objectName}: fetched={fetchedRows}, objectMatched={objectMatchedRows}, directKey={directKeyRows}, selectedByObject={selectedByObject}, xml={xmlRows}, xmlFailed={xmlFailedRows}, parsed={parsedRows}, matched={matchedRows}, candidates={candidates.Count}, sections={sectionByKey.Count}");
+
+        return sectionByKey;
+    }
+    private IReadOnlyDictionary<ReportTextKey, string> LoadReportTextById(
+        string objectName,
+        IReadOnlyCollection<ReportTextKey> textKeys)
+    {
+        var textById = new Dictionary<ReportTextKey, string>();
+        if (string.IsNullOrWhiteSpace(objectName) || textKeys.Count == 0)
+        {
+            return textById;
+        }
+
+        var targetKeys = textKeys
+            .Where(key => key.TextId > 0)
+            .ToHashSet();
+        if (targetKeys.Count == 0)
+        {
+            return textById;
+        }
+
+        TableLayout? layout = _options.UseRowLayoutTables
+            ? TableLayoutLoader.Load(F98760Structures.TableName)
+            : null;
+        if (!TryOpenSpecHandle(JdeSpecFileType.RdaText, F98760Structures.TableName, fallbackTableName: null, out IntPtr hSpec))
+        {
+            return textById;
+        }
+        IntPtr hConvert = IntPtr.Zero;
+        try
+        {
+            int convertInit = JdeSpecEncapApi.jdeSpecInitXMLConvertHandle(out hConvert, JdeSpecFileType.RdaText);
+            if (convertInit != JDESPEC_SUCCESS || hConvert == IntPtr.Zero)
+            {
+                LogSpecDebug($"[UBETEXT] {objectName}: jdeSpecInitXMLConvertHandle failed ({convertInit})");
+                return textById;
+            }
+
+            TrySelectSpecByObjectName(hSpec, objectName, "[UBETEXT]");
+
+            while (true)
+            {
+                var specData = new JdeSpecData();
+                int fetchResult = JdeSpecEncapApi.jdeSpecFetch(hSpec, ref specData);
+                if (fetchResult != JDESPEC_SUCCESS)
+                {
+                    break;
+                }
+
+                try
+                {
+                    string rowObjectName = ReadSpecRecordString(
+                        layout,
+                        specData.RdbRecord,
+                        F98760Structures.Columns.ObjectName);
+                    if (!string.IsNullOrWhiteSpace(rowObjectName) &&
+                        !string.Equals(rowObjectName, objectName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    string? xml = TryConvertSpecDataToXml(hConvert, ref specData);
+                    if (string.IsNullOrWhiteSpace(xml))
+                    {
+                        continue;
+                    }
+
+                    int textId = ReadSpecRecordInt32(
+                        layout,
+                        specData.RdbRecord,
+                        F98760Structures.Columns.TextId);
+                    string version = ReadSpecRecordString(
+                        layout,
+                        specData.RdbRecord,
+                        F98760Structures.Columns.Version);
+
+                    bool hasXmlIdentity = TryReadRdaTextIdentity(xml, out string xmlVersion, out int xmlTextId);
+                    if (hasXmlIdentity)
+                    {
+                        if (textId <= 0)
+                        {
+                            textId = xmlTextId;
+                        }
+
+                        version = xmlVersion;
+                    }
+                    else if (textId <= 0 || string.IsNullOrWhiteSpace(version))
+                    {
+                        continue;
+                    }
+
+                    var textKey = new ReportTextKey(NormalizeReportVersion(version), textId);
+                    if (!targetKeys.Contains(textKey) || textById.ContainsKey(textKey))
+                    {
+                        continue;
+                    }
+
+                    if (TryParseRdaTextValue(xml, out string textValue))
+                    {
+                        textById[textKey] = textValue;
+                    }
+                }
+                finally
+                {
+                    JdeSpecEncapApi.jdeSpecFreeData(ref specData);
+                }
+            }
+        }
+        finally
+        {
+            if (hConvert != IntPtr.Zero)
+            {
+                JdeSpecEncapApi.jdeSpecClose(hConvert);
+            }
+            JdeSpecEncapApi.jdeSpecClose(hSpec);
+        }
+
+        return textById;
+    }
+
+    private static bool TryResolveApplicationControlKey(
+        string rowFormName,
+        int rowControlId,
+        string xml,
+        IReadOnlyDictionary<string, HashSet<int>> requiredControlIdsByForm,
+        out EventRulesControlKey controlKey)
+    {
+        controlKey = default;
+        if (!TryGetFirstApplicationComponentElement(xml, out XElement componentElement))
+        {
+            return false;
+        }
+
+        string? formName = ReadFirstNonEmptyAttribute(componentElement, "FormName");
+        if (string.IsNullOrWhiteSpace(formName))
+        {
+            formName = rowFormName;
+        }
+
+        string normalizedFormName = NormalizeFormKey(formName);
+        if (string.IsNullOrWhiteSpace(normalizedFormName))
+        {
+            return false;
+        }
+
+        if (!requiredControlIdsByForm.TryGetValue(normalizedFormName, out HashSet<int>? requiredControlIds) ||
+            requiredControlIds.Count == 0)
+        {
+            string aliasFormName = GetAlternateApplicationFormName(normalizedFormName);
+            if (string.IsNullOrWhiteSpace(aliasFormName) ||
+                !requiredControlIdsByForm.TryGetValue(aliasFormName, out requiredControlIds) ||
+                requiredControlIds.Count == 0)
+            {
+                return false;
+            }
+
+            normalizedFormName = aliasFormName;
+        }
+
+        var candidateControlIds = BuildApplicationCandidateControlIds(componentElement, rowControlId);
+
+        foreach (int candidateControlId in candidateControlIds.Where(id => id != 0))
+        {
+            if (!requiredControlIds.Contains(candidateControlId))
+            {
+                continue;
+            }
+
+            controlKey = new EventRulesControlKey(normalizedFormName, candidateControlId);
+            return true;
+        }
+
+        foreach (int candidateControlId in candidateControlIds.Where(id => id == 0))
+        {
+            if (!requiredControlIds.Contains(candidateControlId))
+            {
+                continue;
+            }
+
+            controlKey = new EventRulesControlKey(normalizedFormName, candidateControlId);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveApplicationActualControlKey(
+        string rowFormName,
+        int rowControlId,
+        string xml,
+        IReadOnlyCollection<string> relevantFormNames,
+        out EventRulesControlKey controlKey)
+    {
+        controlKey = default;
+        if (!TryGetFirstApplicationComponentElement(xml, out XElement componentElement))
+        {
+            return false;
+        }
+
+        string? formName = ReadFirstNonEmptyAttribute(componentElement, "FormName");
+        if (string.IsNullOrWhiteSpace(formName))
+        {
+            formName = rowFormName;
+        }
+
+        string normalizedFormName = NormalizeFormKey(formName);
+        if (string.IsNullOrWhiteSpace(normalizedFormName))
+        {
+            return false;
+        }
+
+        if (!relevantFormNames.Contains(normalizedFormName, StringComparer.OrdinalIgnoreCase))
+        {
+            string aliasFormName = GetAlternateApplicationFormName(normalizedFormName);
+            if (string.IsNullOrWhiteSpace(aliasFormName) ||
+                !relevantFormNames.Contains(aliasFormName, StringComparer.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            normalizedFormName = aliasFormName;
+        }
+
+        int? actualControlId = TryReadFirstAttributeAsInt(
+            componentElement,
+            "ControlId",
+            "ControlID",
+            "CtrlId",
+            "ObjectId");
+        if (!actualControlId.HasValue)
+        {
+            actualControlId = rowControlId > 0 ? rowControlId : null;
+        }
+
+        if (!actualControlId.HasValue || actualControlId.Value < 0)
+        {
+            return false;
+        }
+
+        controlKey = new EventRulesControlKey(normalizedFormName, actualControlId.Value);
+        return true;
+    }
+
+    private static List<int> BuildApplicationCandidateControlIds(XElement componentElement, int rowControlId)
+    {
+        var candidateControlIds = new List<int>();
+        AddCandidateControlId(candidateControlIds, TryReadFirstAttributeAsInt(componentElement, "ControlId", "ControlID", "CtrlId"));
+        AddCandidateControlId(candidateControlIds, TryReadFirstAttributeAsInt(componentElement, "ObjectId"));
+        AddCandidateControlId(candidateControlIds, TryReadFirstAttributeAsInt(componentElement, "TabControlObjectId"));
+        AddCandidateControlId(candidateControlIds, TryReadFirstAttributeAsInt(componentElement, "GridID"));
+        AddCandidateControlId(candidateControlIds, TryReadFirstAttributeAsInt(componentElement, "ChildObjectId"));
+        AddCandidateControlId(candidateControlIds, TryReadFirstAttributeAsInt(componentElement, "WindowItemId"));
+        AddCandidateControlId(candidateControlIds, TryReadFirstAttributeAsInt(componentElement, "HyperControlObjectId"));
+        AddCandidateControlId(candidateControlIds, TryReadFirstAttributeAsInt(componentElement, "TextBlockControlObjectId"));
+        AddCandidateControlId(candidateControlIds, rowControlId);
+        return candidateControlIds;
+    }
+
+    private static string GetAlternateApplicationFormName(string normalizedFormName)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedFormName) || normalizedFormName.Length < 2)
+        {
+            return string.Empty;
+        }
+
+        char prefix = normalizedFormName[0];
+        if (prefix == 'S')
+        {
+            return $"W{normalizedFormName[1..]}";
+        }
+
+        if (prefix == 'W')
+        {
+            return $"S{normalizedFormName[1..]}";
+        }
+
+        return string.Empty;
+    }
+
+    private static void AddCandidateControlId(List<int> candidates, int? value)
+    {
+        if (!value.HasValue || value.Value < 0 || candidates.Contains(value.Value))
+        {
+            return;
+        }
+
+        candidates.Add(value.Value);
+    }
+
+    private static void ReadApplicationRecordContext(
+        TableLayout? layout,
+        JdeSpecData specData,
+        string xml,
+        out int eventId,
+        out int eventId3,
+        out int recordType)
+    {
+        eventId = ParseEventOrder(ReadSpecRecordMathNumeric(layout, specData.RdbRecord, F98751Structures.Columns.EventId));
+        eventId3 = ReadSpecRecordInt32(layout, specData.RdbRecord, F98751Structures.Columns.EventId3);
+        recordType = ParseEventOrder(ReadSpecRecordMathNumeric(layout, specData.RdbRecord, F98751Structures.Columns.RecordType));
+        if ((eventId == 0 || eventId3 == 0) &&
+            TryGetFirstApplicationComponentElement(xml, out XElement componentElement))
+        {
+            eventId = eventId == 0
+                ? TryReadFirstAttributeAsInt(componentElement, "EventId") ?? 0
+                : eventId;
+            eventId3 = eventId3 == 0
+                ? TryReadFirstAttributeAsInt(componentElement, "EventId3", "NextEvent") ?? 0
+                : eventId3;
+        }
+    }
+
+    private static bool TryParseApplicationControlLocator(string xml, out string formName, out int controlId)
+    {
+        formName = string.Empty;
+        controlId = 0;
+        if (!TryGetFirstApplicationComponentElement(xml, out XElement componentElement))
+        {
+            return false;
+        }
+
+        formName = ReadFirstNonEmptyAttribute(componentElement, "FormName") ?? string.Empty;
+        controlId = TryReadFirstAttributeAsInt(
+                componentElement,
+                "ControlId",
+                "ControlID",
+                "CtrlId",
+                "TabControlObjectId",
+                "GridID",
+                "HyperControlObjectId",
+                "TextBlockControlObjectId",
+                "ChildObjectId",
+                "ObjectId",
+                "WindowItemId")
+            ?? 0;
+        return !string.IsNullOrWhiteSpace(formName);
+    }
+
+    private static bool TryGetFirstApplicationComponentElement(string xml, out XElement componentElement)
+    {
+        componentElement = null!;
+        if (!TryParseXmlRoot(xml, out XElement? root) || root == null)
+        {
+            return false;
+        }
+
+        XElement? recordElement = root
+            .DescendantsAndSelf()
+            .FirstOrDefault(element => string.Equals(
+                element.Name.LocalName,
+                "FDARecord",
+                StringComparison.OrdinalIgnoreCase));
+        XElement? firstElement = recordElement?.Elements().FirstOrDefault();
+        if (firstElement == null)
+        {
+            return false;
+        }
+
+        componentElement = firstElement;
+        return true;
+    }
+
+    private static bool TryReadTextIdFromRootAttribute(string xml, out int textId)
+    {
+        textId = 0;
+        if (!TryParseXmlRoot(xml, out XElement? root) || root == null)
+        {
+            return false;
+        }
+
+        textId = TryReadFirstAttributeAsInt(root, "TextID", "TextId") ?? 0;
+        return textId > 0;
+    }
+
+    private static bool TryReadVersionFromRootAttribute(string xml, out string version)
+    {
+        version = string.Empty;
+        if (!TryParseXmlRoot(xml, out XElement? root) || root == null)
+        {
+            return false;
+        }
+
+        version = ReadFirstNonEmptyAttribute(root, "Version") ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(version);
+    }
+
+    private static bool TryReadRdaTextIdentity(string xml, out string version, out int textId)
+    {
+        version = string.Empty;
+        textId = 0;
+        if (!TryParseXmlRoot(xml, out XElement? root) || root == null)
+        {
+            return false;
+        }
+
+        version = ReadFirstNonEmptyAttribute(root, "Version") ?? string.Empty;
+        textId = TryReadFirstAttributeAsInt(root, "TextID", "TextId") ?? 0;
+        return !string.IsNullOrWhiteSpace(version) && textId > 0;
+    }
+
+    private static bool TryParseReportSectionDescriptor(string xml, out ReportSectionDescriptor descriptor)
+    {
+        descriptor = ReportSectionDescriptor.Empty;
+        if (!TryParseXmlRoot(xml, out XElement? root) || root == null)
+        {
+            return false;
+        }
+
+        XElement? sectionElement = root
+            .Descendants()
+            .FirstOrDefault(element => string.Equals(
+                element.Name.LocalName,
+                "RDASection",
+                StringComparison.OrdinalIgnoreCase));
+        if (sectionElement == null)
+        {
+            return false;
+        }
+
+        int? sectionId = TryReadFirstAttributeAsInt(sectionElement, "SectionID");
+        if (!sectionId.HasValue)
+        {
+            return false;
+        }
+
+        descriptor = new ReportSectionDescriptor
+        {
+            SectionId = sectionId.Value,
+            TextId = TryReadFirstAttributeAsInt(sectionElement, "TextID", "TextId"),
+            SectionType = ReadFirstNonEmptyAttribute(sectionElement, "SectionType") ?? string.Empty,
+            BusinessViewName = ReadFirstNonEmptyAttribute(sectionElement, "ViewName", "BusinessViewName"),
+            PropertyFlags = ReadAttributeIntOrDefault(sectionElement, "PropertyFlags"),
+            StyleFlags = ReadAttributeIntOrDefault(sectionElement, "StyleFlags"),
+            Left = ReadAttributeIntOrDefault(sectionElement, "LeftCoordinate"),
+            Top = ReadAttributeIntOrDefault(sectionElement, "TopCoordinate"),
+            Width = ReadAttributeIntOrDefault(sectionElement, "Width"),
+            Height = ReadAttributeIntOrDefault(sectionElement, "Height")
+        };
+        return true;
+    }
+
+    private static int ReadAttributeIntOrDefault(XElement element, string attributeName)
+    {
+        string? rawValue = GetAttributeValueIgnoreCase(element, attributeName);
+        return int.TryParse(rawValue, out int parsed) ? parsed : 0;
+    }
+
+    private static bool TryParseRdaTextValue(string xml, out string textValue)
+    {
+        textValue = string.Empty;
+        if (!TryParseXmlRoot(xml, out XElement? root) || root == null)
+        {
+            return false;
+        }
+
+        XElement textElement = string.Equals(root.Name.LocalName, "RDAText", StringComparison.OrdinalIgnoreCase)
+            ? root
+            : root
+                .Descendants()
+                .FirstOrDefault(element => string.Equals(element.Name.LocalName, "RDAText", StringComparison.OrdinalIgnoreCase))
+              ?? root;
+        string value = NormalizeText(textElement.Value);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        textValue = value;
+        return true;
+    }
+
+    private static IReadOnlyList<JdeEventRulesNode> BuildEventRulesLinkNodes(
+        IReadOnlyList<EventRulesLinkRow> rows,
+        int productType,
+        ApplicationTreeMetadata metadata)
     {
         var children = new List<JdeEventRulesNode>();
         if (rows.Count == 0)
@@ -3639,7 +4857,9 @@ private static bool TryUncompressNative(byte[] blob, out byte[] uncompressed)
         if (hasVersion)
         {
             foreach (var versionGroup in rows
-                .GroupBy(row => NormalizeGroupKey(row.Version))
+                .GroupBy(row => productType == ProductTypeRda
+                    ? NormalizeReportVersion(row.Version)
+                    : NormalizeGroupKey(row.Version))
                 .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
             {
                 var versionNode = new JdeEventRulesNode
@@ -3647,61 +4867,287 @@ private static bool TryUncompressNative(byte[] blob, out byte[] uncompressed)
                     Id = $"version:{versionGroup.Key}",
                     Name = FormatVersionLabel(versionGroup.Key),
                     NodeType = JdeEventRulesNodeType.Section,
-                    Children = BuildFormNodes(versionGroup.ToList(), hasForm)
+                    VersionName = ToOptional(versionGroup.Key),
+                    Children = BuildFormNodes(versionGroup.ToList(), hasForm, productType, metadata)
                 };
                 children.Add(versionNode);
             }
             return children;
         }
-        children.AddRange(BuildFormNodes(rows, hasForm));
+        children.AddRange(BuildFormNodes(rows, hasForm, productType, metadata));
         return children;
     }
 
-    private static IReadOnlyList<JdeEventRulesNode> BuildFormNodes(IReadOnlyList<EventRulesLinkRow> rows, bool hasForm)
+    private static IReadOnlyList<JdeEventRulesNode> BuildFormNodes(
+        IReadOnlyList<EventRulesLinkRow> rows,
+        bool hasForm,
+        int productType,
+        ApplicationTreeMetadata metadata)
     {
         var children = new List<JdeEventRulesNode>();
         if (!hasForm)
         {
-            children.AddRange(BuildControlNodes(rows));
+            children.AddRange(BuildControlNodes(rows, productType, metadata));
             return children;
         }
         foreach (var formGroup in rows
-            .GroupBy(row => NormalizeGroupKey(row.FormName))
+            .GroupBy(row => productType == ProductTypeRda
+                ? NormalizeReportSectionKey(row.FormName)
+                : NormalizeGroupKey(row.FormName))
             .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
         {
+            var first = formGroup.First();
+            metadata.FormDescriptions.TryGetValue(formGroup.Key, out string? formDescription);
+            metadata.SectionMetadata.TryGetValue(
+                new EventRulesSectionKey(NormalizeReportVersion(first.Version), formGroup.Key),
+                out ReportSectionMetadata? reportSection);
             var formNode = new JdeEventRulesNode
             {
                 Id = $"form:{formGroup.Key}",
-                Name = FormatFormLabel(formGroup.Key),
+                Name = FormatFormLabel(formGroup.Key, productType, formDescription, reportSection),
                 NodeType = JdeEventRulesNodeType.Form,
-                Children = BuildControlNodes(formGroup.ToList())
+                VersionName = ToOptional(first.Version),
+                FormOrSectionName = ToOptional(formGroup.Key),
+                ComponentTypeName = reportSection?.SectionType,
+                ComponentConfiguration = reportSection == null
+                    ? null
+                    : BuildReportSectionConfiguration(metadata.ObjectName, reportSection),
+                Children = BuildControlNodes(formGroup.ToList(), productType, metadata)
             };
             children.Add(formNode);
         }
         return children;
     }
 
-    private static IReadOnlyList<JdeEventRulesNode> BuildControlNodes(IReadOnlyList<EventRulesLinkRow> rows)
+    private static IReadOnlyList<JdeEventRulesNode> BuildControlNodes(
+        IReadOnlyList<EventRulesLinkRow> rows,
+        int productType,
+        ApplicationTreeMetadata metadata)
     {
+        if (productType == ProductTypeFda)
+        {
+            return BuildApplicationControlNodes(rows, metadata);
+        }
+
         var children = new List<JdeEventRulesNode>();
         foreach (var controlGroup in rows
             .GroupBy(row => row.ControlId)
             .OrderBy(group => group.Key))
         {
-            string controlLabel = FormatControlLabel(controlGroup.Key);
+            var first = controlGroup.First();
+            var controlKey = new EventRulesControlKey(NormalizeFormKey(first.FormName), controlGroup.Key);
+            metadata.ControlMetadata.TryGetValue(controlKey, out ApplicationControlMetadata? controlMetadata);
+            string controlLabel = FormatControlLabel(controlGroup.Key, productType, controlMetadata);
             var controlNode = new JdeEventRulesNode
             {
                 Id = $"control:{controlGroup.Key}",
                 Name = controlLabel,
                 NodeType = controlGroup.Key == 0 ? JdeEventRulesNodeType.Form : JdeEventRulesNodeType.Control,
-                Children = BuildEventNodes(controlGroup.ToList())
+                VersionName = ToOptional(first.Version),
+                FormOrSectionName = ToOptional(first.FormName),
+                ControlId = controlGroup.Key,
+                DataStructureName = controlMetadata?.DataStructureName,
+                TextId = controlMetadata?.TextId,
+                ComponentTypeName = controlMetadata?.ComponentTypeName,
+                ComponentConfiguration = controlMetadata?.ConfigurationSummary,
+                Children = BuildEventNodes(controlGroup.ToList(), productType, metadata)
             };
             children.Add(controlNode);
         }
         return children;
     }
 
-    private static IReadOnlyList<JdeEventRulesNode> BuildEventNodes(IReadOnlyList<EventRulesLinkRow> rows)
+    private static IReadOnlyList<JdeEventRulesNode> BuildApplicationControlNodes(
+        IReadOnlyList<EventRulesLinkRow> rows,
+        ApplicationTreeMetadata metadata)
+    {
+        var children = new List<JdeEventRulesNode>();
+        if (rows.Count == 0)
+        {
+            return children;
+        }
+
+        string versionName = rows[0].Version;
+        string formName = rows[0].FormName;
+        string normalizedFormName = NormalizeFormKey(formName);
+
+        var controlGroups = rows
+            .GroupBy(row => row.ControlId)
+            .Select(group =>
+            {
+                metadata.ControlMetadata.TryGetValue(
+                    new EventRulesControlKey(normalizedFormName, group.Key),
+                    out ApplicationControlMetadata? controlMetadata);
+                return new
+                {
+                    ControlId = group.Key,
+                    Rows = (IReadOnlyList<EventRulesLinkRow>)group.ToList(),
+                    Metadata = controlMetadata
+                };
+            })
+            .ToList();
+
+        var formEventGroup = controlGroups.FirstOrDefault(group => group.ControlId == 0);
+        if (formEventGroup != null)
+        {
+            children.Add(BuildApplicationControlNode(
+                formEventGroup.ControlId,
+                versionName,
+                formName,
+                formEventGroup.Rows,
+                formEventGroup.Metadata,
+                metadata));
+        }
+
+        var gridColumnsByParent = metadata.ControlMetadata
+            .Where(entry =>
+                string.Equals(entry.Key.FormName, normalizedFormName, StringComparison.OrdinalIgnoreCase) &&
+                entry.Value.ParentControlId.HasValue)
+            .GroupBy(entry => entry.Value.ParentControlId!.Value)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderBy(entry => entry.Value.DisplayOrder ?? int.MaxValue)
+                    .ThenBy(entry => entry.Key.ControlId)
+                    .ToList());
+
+        var gridParentIds = new HashSet<int>(gridColumnsByParent.Keys);
+        foreach (var group in controlGroups.Where(group => group.Metadata?.IsGridContainer == true))
+        {
+            gridParentIds.Add(group.ControlId);
+        }
+
+        foreach (var controlGroup in controlGroups
+                     .Where(group =>
+                         group.ControlId != 0 &&
+                         !gridParentIds.Contains(group.ControlId) &&
+                         group.Metadata?.ParentControlId is null)
+                     .OrderBy(group => group.Metadata?.DisplayOrder ?? int.MaxValue)
+                     .ThenBy(group => group.ControlId))
+        {
+            children.Add(BuildApplicationControlNode(
+                controlGroup.ControlId,
+                versionName,
+                formName,
+                controlGroup.Rows,
+                controlGroup.Metadata,
+                metadata));
+        }
+
+        foreach (int gridParentId in gridParentIds
+                     .OrderBy(gridParentId =>
+                     {
+                         metadata.ControlMetadata.TryGetValue(
+                             new EventRulesControlKey(normalizedFormName, gridParentId),
+                             out ApplicationControlMetadata? gridMetadata);
+                         return gridMetadata?.DisplayOrder ?? int.MaxValue;
+                     })
+                     .ThenBy(gridParentId => gridParentId))
+        {
+            metadata.ControlMetadata.TryGetValue(
+                new EventRulesControlKey(normalizedFormName, gridParentId),
+                out ApplicationControlMetadata? gridMetadata);
+            var gridEventGroup = controlGroups.FirstOrDefault(group => group.ControlId == gridParentId);
+            if (gridMetadata == null)
+            {
+                gridMetadata = gridEventGroup?.Metadata;
+            }
+
+            var gridChildren = new List<JdeEventRulesNode>();
+            if (gridEventGroup != null && gridEventGroup.Rows.Count > 0)
+            {
+                var gridEventNodes = BuildEventNodes(gridEventGroup.Rows, ProductTypeFda, metadata);
+                if (gridEventNodes.Count > 0)
+                {
+                    gridChildren.Add(new JdeEventRulesNode
+                    {
+                        Id = $"grid-events:{normalizedFormName}:{gridParentId}",
+                        Name = "Events",
+                        NodeType = JdeEventRulesNodeType.Section,
+                        VersionName = ToOptional(versionName),
+                        FormOrSectionName = ToOptional(formName),
+                        ControlId = gridParentId,
+                        DataStructureName = gridMetadata?.DataStructureName,
+                        TextId = gridMetadata?.TextId,
+                        ComponentTypeName = gridMetadata?.ComponentTypeName,
+                        ComponentConfiguration = gridMetadata?.ConfigurationSummary,
+                        Children = gridEventNodes
+                    });
+                }
+            }
+
+            if (gridColumnsByParent.TryGetValue(gridParentId, out List<KeyValuePair<EventRulesControlKey, ApplicationControlMetadata>>? gridColumns))
+            {
+                foreach (var columnEntry in gridColumns)
+                {
+                    var columnGroup = controlGroups.FirstOrDefault(group => group.ControlId == columnEntry.Key.ControlId);
+                    gridChildren.Add(BuildApplicationControlNode(
+                        columnEntry.Key.ControlId,
+                        versionName,
+                        formName,
+                        columnGroup?.Rows ?? Array.Empty<EventRulesLinkRow>(),
+                        columnEntry.Value,
+                        metadata));
+                }
+            }
+
+            if (gridChildren.Count == 0)
+            {
+                continue;
+            }
+
+            children.Add(new JdeEventRulesNode
+            {
+                Id = $"grid:{normalizedFormName}:{gridParentId}",
+                Name = string.IsNullOrWhiteSpace(gridMetadata?.DisplayLabel)
+                    ? "Grid"
+                    : gridMetadata.DisplayLabel,
+                NodeType = JdeEventRulesNodeType.Control,
+                VersionName = ToOptional(versionName),
+                FormOrSectionName = ToOptional(formName),
+                ControlId = gridParentId,
+                DataStructureName = gridMetadata?.DataStructureName,
+                TextId = gridMetadata?.TextId,
+                ComponentTypeName = gridMetadata?.ComponentTypeName,
+                ComponentConfiguration = gridMetadata?.ConfigurationSummary,
+                Children = gridChildren
+            });
+        }
+
+        return children;
+    }
+
+    private static JdeEventRulesNode BuildApplicationControlNode(
+        int controlId,
+        string versionName,
+        string formName,
+        IReadOnlyList<EventRulesLinkRow> rows,
+        ApplicationControlMetadata? controlMetadata,
+        ApplicationTreeMetadata metadata)
+    {
+        string controlLabel = FormatControlLabel(controlId, ProductTypeFda, controlMetadata);
+        return new JdeEventRulesNode
+        {
+            Id = $"control:{controlId}",
+            Name = controlLabel,
+            NodeType = controlId == 0 ? JdeEventRulesNodeType.Form : JdeEventRulesNodeType.Control,
+            VersionName = ToOptional(versionName),
+            FormOrSectionName = ToOptional(formName),
+            ControlId = controlId,
+            DataStructureName = controlMetadata?.DataStructureName,
+            TextId = controlMetadata?.TextId,
+            ComponentTypeName = controlMetadata?.ComponentTypeName,
+            ComponentConfiguration = controlMetadata?.ConfigurationSummary,
+            Children = rows.Count == 0
+                ? Array.Empty<JdeEventRulesNode>()
+                : BuildEventNodes(rows, ProductTypeFda, metadata)
+        };
+    }
+
+    private static IReadOnlyList<JdeEventRulesNode> BuildEventNodes(
+        IReadOnlyList<EventRulesLinkRow> rows,
+        int productType,
+        ApplicationTreeMetadata metadata)
     {
         var children = new List<JdeEventRulesNode>();
         foreach (var eventGroup in rows
@@ -3710,13 +5156,29 @@ private static bool TryUncompressNative(byte[] blob, out byte[] uncompressed)
             .ThenBy(group => group.Key.EventId, StringComparer.OrdinalIgnoreCase)
             .ThenBy(group => group.Key.Id3))
         {
-            string label = FormatEventLabel(eventGroup.Key.EventId, eventGroup.Key.Id3);
+            var first = eventGroup.First();
+            var controlKey = new EventRulesControlKey(NormalizeFormKey(first.FormName), first.ControlId);
+            metadata.ControlMetadata.TryGetValue(controlKey, out ApplicationControlMetadata? controlMetadata);
+            string label = FormatEventLabel(
+                eventGroup.Key.EventId,
+                eventGroup.Key.Id3,
+                productType,
+                first.FormName);
             var eventNode = new JdeEventRulesNode
             {
                 Id = eventGroup.Key.EventSpecKey,
                 Name = label,
                 NodeType = JdeEventRulesNodeType.Event,
-                EventSpecKey = eventGroup.Key.EventSpecKey
+                EventSpecKey = eventGroup.Key.EventSpecKey,
+                VersionName = ToOptional(first.Version),
+                FormOrSectionName = ToOptional(first.FormName),
+                ControlId = first.ControlId,
+                EventId = ToOptional(eventGroup.Key.EventId),
+                EventId3 = eventGroup.Key.Id3 == 0 ? null : eventGroup.Key.Id3,
+                DataStructureName = controlMetadata?.DataStructureName,
+                TextId = controlMetadata?.TextId,
+                ComponentTypeName = controlMetadata?.ComponentTypeName,
+                ComponentConfiguration = controlMetadata?.ConfigurationSummary
             };
             children.Add(eventNode);
         }
@@ -3728,29 +5190,260 @@ private static bool TryUncompressNative(byte[] blob, out byte[] uncompressed)
         return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
     }
 
+    private static string NormalizeReportVersion(string? version)
+    {
+        string normalized = NormalizeGroupKey(version);
+        return string.IsNullOrWhiteSpace(normalized)
+            ? "+"
+            : normalized.ToUpperInvariant();
+    }
+
+    private static string NormalizeReportSectionKey(string? sectionName)
+    {
+        string normalized = NormalizeGroupKey(sectionName);
+        if (TryParseReportSectionIdentifier(normalized, out int sectionId))
+        {
+            return $"S{sectionId}";
+        }
+
+        return normalized.ToUpperInvariant();
+    }
+
+    private static bool TryParseReportSectionIdentifier(string sectionToken, out int sectionId)
+    {
+        sectionId = 0;
+        if (string.IsNullOrWhiteSpace(sectionToken))
+        {
+            return false;
+        }
+
+        if (TryParseSectionId(sectionToken, out sectionId))
+        {
+            return true;
+        }
+
+        if (int.TryParse(sectionToken, out sectionId) && sectionId > 0)
+        {
+            return true;
+        }
+
+        int sectionIndex = sectionToken.IndexOf("Section", StringComparison.OrdinalIgnoreCase);
+        if (sectionIndex >= 0)
+        {
+            for (int i = sectionIndex + "Section".Length; i < sectionToken.Length; i++)
+            {
+                if (!char.IsDigit(sectionToken[i]))
+                {
+                    continue;
+                }
+
+                int start = i;
+                while (i < sectionToken.Length && char.IsDigit(sectionToken[i]))
+                {
+                    i++;
+                }
+
+                string digitToken = sectionToken.Substring(start, i - start);
+                return int.TryParse(digitToken, out sectionId) && sectionId > 0;
+            }
+        }
+
+        int openParen = sectionToken.LastIndexOf('(');
+        int closeParen = sectionToken.LastIndexOf(')');
+        if (openParen >= 0 && closeParen > openParen + 1 && closeParen == sectionToken.Length - 1)
+        {
+            string digitToken = sectionToken.Substring(openParen + 1, closeParen - openParen - 1).Trim();
+            return int.TryParse(digitToken, out sectionId) && sectionId > 0;
+        }
+
+        return false;
+    }
+
     private static string FormatVersionLabel(string key)
     {
+        if (string.Equals(key, "+", StringComparison.Ordinal))
+        {
+            return "Version: + (All)";
+        }
+
         return string.IsNullOrWhiteSpace(key) ? "Version: <default>" : $"Version: {key}";
     }
 
-    private static string FormatFormLabel(string key)
+    private static string FormatFormLabel(
+        string key,
+        int productType,
+        string? formDescription = null,
+        ReportSectionMetadata? reportSection = null)
     {
-        return string.IsNullOrWhiteSpace(key) ? "Form: <default>" : $"Form: {key}";
+        if (productType == ProductTypeRda)
+        {
+            if (reportSection != null && !string.IsNullOrWhiteSpace(reportSection.SectionName))
+            {
+                return $"{reportSection.SectionName} ({reportSection.SectionId})";
+            }
+
+            return NormalizeGroupKey(key);
+        }
+
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return "Form: <default>";
+        }
+
+        return string.IsNullOrWhiteSpace(formDescription)
+            ? key
+            : $"{formDescription} ({key})";
     }
 
-    private static string FormatControlLabel(int controlId)
+    private static string BuildReportSectionConfiguration(string objectName, ReportSectionMetadata section)
     {
-        return controlId == 0 ? "Form Events" : $"Control {controlId}";
+        var lines = new List<string>
+        {
+            $"UBE: {objectName}",
+            $"Section: {section.SectionName}",
+            $"Section ID: {section.SectionId}",
+            $"Type: {section.SectionType}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(section.BusinessViewName))
+        {
+            lines.Add($"Business View: {section.BusinessViewName}");
+        }
+
+        lines.Add($"Visible: {ToYesNo(section.Visible)}");
+        lines.Add($"Absolute Positional: {ToYesNo(section.AbsolutePositional)}");
+        lines.Add($"Page Break After: {ToYesNo(section.PageBreakAfter)}");
+        lines.Add($"Conditional: {ToYesNo(section.Conditional)}");
+        lines.Add($"Reprint At Page Break: {ToYesNo(section.ReprintAtPageBreak)}");
+        lines.Add($"Left: {section.Left}");
+        lines.Add($"Top: {section.Top}");
+        lines.Add($"Width: {section.Width}");
+        lines.Add($"Height: {section.Height}");
+
+        return string.Join(Environment.NewLine, lines);
     }
 
-    private static string FormatEventLabel(string eventId, int id3)
+    private static string ToYesNo(bool value) => value ? "Y" : "N";
+
+    private static string FormatControlLabel(
+        int controlId,
+        int productType,
+        ApplicationControlMetadata? metadata = null)
     {
-        string label = string.IsNullOrWhiteSpace(eventId) ? "Event" : $"Event {eventId}";
+        if (productType == ProductTypeRda)
+        {
+            return controlId == 0 ? "Section Events" : $"Object {controlId}";
+        }
+
+        if (productType == ProductTypeTer)
+        {
+            return controlId == 0 ? "Table Events" : $"Trigger {controlId}";
+        }
+
+        if (metadata != null && !string.IsNullOrWhiteSpace(metadata.DisplayLabel))
+        {
+            return metadata.DisplayLabel;
+        }
+
+        return controlId == 0 ? "Form Events" : controlId.ToString();
+    }
+
+    private static string FormatEventLabel(string eventId, int id3, int productType, string formOrSectionName)
+    {
+        string normalizedEventId = NormalizeGroupKey(eventId);
+        string label = ResolveEventLabel(normalizedEventId, productType, formOrSectionName);
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            label = string.IsNullOrWhiteSpace(normalizedEventId) ? "Event" : $"Event {normalizedEventId}";
+        }
+        else if (!string.IsNullOrWhiteSpace(normalizedEventId))
+        {
+            label = $"{label} [{normalizedEventId}]";
+        }
+
         if (id3 != 0)
         {
-            label += $" ({id3})";
+            label += $" [ID3 {id3}]";
         }
+
         return label;
+    }
+
+    private static string ResolveEventLabel(string eventId, int productType, string formOrSectionName)
+    {
+        if (string.IsNullOrWhiteSpace(eventId))
+        {
+            return string.Empty;
+        }
+
+        if (productType == ProductTypeFda)
+        {
+            return eventId switch
+            {
+                "0" => "Button Clicked",
+                "1536" => "Post Dialog is Initialized",
+                "1537" => "Grid Record is Fetched",
+                "1540" => "Write Grid Line-Before",
+                "1541" => "Last Grid Record Has Been Read",
+                "1563" => "Post Button Clicked",
+                "1571" => "Control Exited/Changed-Inline",
+                "1596" => "Row is Selected (Web Only)",
+                "1607" => "Function Body",
+                "1610" => "Row is Unselected (Web Only)",
+                "9849" => "Tab Page is Selected",
+                "9856" => "Grid Cell Display Changed",
+                "9860" => "Grid Column Clicked",
+                "65535" => "Form Variables",
+                _ => string.Empty
+            };
+        }
+
+        if (productType == ProductTypeRda)
+        {
+            return eventId switch
+            {
+                "11" => "Initialize Section",
+                "13" => "Do Section",
+                "15" => "End Section",
+                "40" => "After Last Object Printed",
+                "65535" => string.IsNullOrWhiteSpace(formOrSectionName) ? "Report Variables" : "Section Variables",
+                _ => string.Empty
+            };
+        }
+
+        if (productType == ProductTypeTer)
+        {
+            return eventId switch
+            {
+                "5" => "After Record is Deleted",
+                _ => string.Empty
+            };
+        }
+
+        return string.Empty;
+    }
+
+    private static bool TryParseSectionId(string sectionKey, out int sectionId)
+    {
+        sectionId = 0;
+        if (string.IsNullOrWhiteSpace(sectionKey))
+        {
+            return false;
+        }
+
+        string trimmed = sectionKey.Trim();
+        if (trimmed.Length < 2 || !trimmed.StartsWith("S", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return int.TryParse(trimmed[1..], out sectionId);
+    }
+
+    private static string? ToOptional(string? value)
+    {
+        string normalized = NormalizeGroupKey(value);
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 
     private static int ParseEventOrder(string eventId)
@@ -3766,6 +5459,406 @@ private static bool TryUncompressNative(byte[] blob, out byte[] uncompressed)
             token = token.Substring(0, dot);
         }
         return int.TryParse(token, out int value) ? value : 0;
+    }
+
+    private static bool IsApplicationMetadataRecordType(int recordType)
+    {
+        return recordType == 0 || recordType == 3 || recordType == 5;
+    }
+
+    private static bool TryParseApplicationControlDescriptor(
+        string xml,
+        int recordType,
+        out ApplicationControlDescriptor descriptor)
+    {
+        descriptor = ApplicationControlDescriptor.Empty;
+        if (!TryParseXmlRoot(xml, out XElement? root) || root == null)
+        {
+            return false;
+        }
+
+        XElement? recordElement = root
+            .DescendantsAndSelf()
+            .FirstOrDefault(element => string.Equals(element.Name.LocalName, "FDARecord", StringComparison.OrdinalIgnoreCase));
+        XElement? componentElement = recordElement?.Elements().FirstOrDefault();
+        if (componentElement == null)
+        {
+            return false;
+        }
+
+        var attributes = componentElement.Attributes()
+            .Where(attribute => !string.IsNullOrWhiteSpace(attribute.Value))
+            .Select(attribute => new KeyValuePair<string, string>(
+                attribute.Name.LocalName,
+                NormalizeText(attribute.Value)))
+            .ToList();
+
+        int? textId = TryReadFirstAttributeAsInt(
+            componentElement,
+            "TextId",
+            "FDATextId",
+            "ColumnTitleId",
+            "ColumnTitleID",
+            "TabPageTitleId",
+            "TitleTextId",
+            "PromptTextId");
+        string? dataStructureName = ReadFirstNonEmptyAttribute(
+            componentElement,
+            "DataStructureTemplate",
+            "DSTemplateName",
+            "TemplateName",
+            "ProcessingOptionTemplate",
+            "FormInterconnectTemplate");
+        int? parentControlId = TryReadFirstAttributeAsInt(componentElement, "GridID", "GridId");
+        int? displayOrder = TryReadFirstAttributeAsInt(componentElement, "SequenceNumber", "TabOrderIndex");
+        string? autoBehavior = ReadFirstNonEmptyAttribute(
+            componentElement,
+            "PushButtonAutoBehavior",
+            "ButtonType");
+
+        string componentTypeName = FormatApplicationComponentTypeName(componentElement, recordType);
+        bool isGridContainer = string.Equals(componentTypeName, "Grid", StringComparison.OrdinalIgnoreCase);
+        XElement? dbRefElement = componentElement
+            .Descendants()
+            .FirstOrDefault(element => string.Equals(element.Name.LocalName, "Dbref", StringComparison.OrdinalIgnoreCase));
+        if (dbRefElement != null)
+        {
+            AddAttribute(attributes, "DataItem", GetAttributeValueIgnoreCase(dbRefElement, "szDict"));
+            AddAttribute(attributes, "Table", GetAttributeValueIgnoreCase(dbRefElement, "szTable"));
+        }
+
+        descriptor = new ApplicationControlDescriptor
+        {
+            ComponentTypeName = componentTypeName,
+            TextId = textId,
+            DataStructureName = dataStructureName,
+            Attributes = attributes,
+            ParentControlId = parentControlId,
+            DisplayOrder = displayOrder,
+            IsGridContainer = isGridContainer,
+            AutoBehavior = autoBehavior,
+            Score = 0
+        };
+        return true;
+    }
+
+    private static int GetApplicationControlDescriptorScore(
+        int eventId,
+        int eventId3,
+        ApplicationControlDescriptor descriptor)
+    {
+        int score = 0;
+        if (eventId == 0)
+        {
+            score += 30;
+        }
+        else
+        {
+            score -= 8;
+        }
+
+        if (eventId3 == 0)
+        {
+            score += 10;
+        }
+
+        if (descriptor.TextId.HasValue)
+        {
+            score += 8;
+        }
+
+        if (!string.IsNullOrWhiteSpace(descriptor.ComponentTypeName))
+        {
+            score += 4;
+            if (descriptor.ComponentTypeName.Contains("Event", StringComparison.OrdinalIgnoreCase))
+            {
+                score -= 6;
+            }
+        }
+
+        score += Math.Min(descriptor.Attributes.Count, 6);
+        return score;
+    }
+
+    private static string BuildApplicationControlLabel(
+        int controlId,
+        ApplicationControlDescriptor descriptor,
+        string? resolvedText)
+    {
+        if (controlId == 0)
+        {
+            return "Form Events";
+        }
+
+        if (descriptor.IsGridContainer)
+        {
+            return "Grid";
+        }
+
+        if (!string.IsNullOrWhiteSpace(resolvedText))
+        {
+            return NormalizeSingleLineLabel(resolvedText);
+        }
+
+        if (string.Equals(descriptor.ComponentTypeName, "Push Button", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(descriptor.AutoBehavior, "PUSHB_FIND", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Find";
+        }
+
+        if (!string.IsNullOrWhiteSpace(descriptor.ComponentTypeName))
+        {
+            return $"{descriptor.ComponentTypeName} ({controlId})";
+        }
+
+        return controlId.ToString();
+    }
+
+    private static string BuildApplicationControlConfiguration(
+        string formName,
+        ApplicationControlDescriptor descriptor,
+        string? resolvedText)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(formName))
+        {
+            parts.Add($"Form={formName}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(descriptor.ComponentTypeName))
+        {
+            parts.Add($"Type={descriptor.ComponentTypeName}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(descriptor.DataStructureName))
+        {
+            parts.Add($"DataStructure={descriptor.DataStructureName}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(resolvedText))
+        {
+            parts.Add($"Label={NormalizeSingleLineLabel(resolvedText)}");
+        }
+
+        if (descriptor.TextId.HasValue)
+        {
+            parts.Add($"TextId={descriptor.TextId.Value}");
+        }
+
+        foreach (var attribute in descriptor.Attributes)
+        {
+            if (parts.Count >= 12)
+            {
+                break;
+            }
+
+            if (IsDuplicateConfigurationPart(attribute.Key))
+            {
+                continue;
+            }
+
+            parts.Add($"{attribute.Key}={attribute.Value}");
+        }
+
+        return parts.Count == 0
+            ? string.Empty
+            : $"Component Config: {string.Join(" | ", parts)}";
+    }
+
+    private static bool IsDuplicateConfigurationPart(string attributeName)
+    {
+        return string.Equals(attributeName, "TextId", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(attributeName, "FDATextId", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(attributeName, "TabPageTitleId", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(attributeName, "TitleTextId", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatApplicationComponentTypeName(XElement componentElement, int recordType)
+    {
+        string localName = componentElement.Name.LocalName;
+        if (localName.StartsWith("FDA", StringComparison.OrdinalIgnoreCase))
+        {
+            localName = localName[3..];
+        }
+
+        if (string.IsNullOrWhiteSpace(localName))
+        {
+            return $"Record {recordType}";
+        }
+
+        if (string.Equals(localName, "Control", StringComparison.OrdinalIgnoreCase))
+        {
+            string controlTypeToken = ReadFirstNonEmptyAttribute(componentElement, "ControlType") ?? string.Empty;
+            if (int.TryParse(controlTypeToken, out int numericControlType))
+            {
+                return numericControlType switch
+                {
+                    1 => "Control",
+                    2 => "Tab Control",
+                    3 => "Page",
+                    _ => "Control"
+                };
+            }
+
+            return controlTypeToken.ToUpperInvariant() switch
+            {
+                "PUSHBUTTON" => "Push Button",
+                "TEXTBLOCK" => "Text Block",
+                "FUNCTION" => "Function",
+                "TAB" => "Tab Control",
+                "CHECKBOX" => "Check Box",
+                "RADIOBUTTON" => "Radio Button",
+                "COMBOBOX" => "Combo Box",
+                "LISTBOX" => "List Box",
+                _ => "Control"
+            };
+        }
+
+        if (string.Equals(localName, "GridControl", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Grid";
+        }
+
+        if (string.Equals(localName, "Column", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Grid Column";
+        }
+
+        return SplitPascalCase(localName);
+    }
+
+    private static void AddAttribute(
+        ICollection<KeyValuePair<string, string>> attributes,
+        string key,
+        string? value)
+    {
+        if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (attributes.Any(attribute => string.Equals(attribute.Key, key, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        attributes.Add(new KeyValuePair<string, string>(key, NormalizeText(value)));
+    }
+
+    private static string FormatReportSectionType(string? sectionType)
+    {
+        if (string.IsNullOrWhiteSpace(sectionType))
+        {
+            return "Unknown";
+        }
+
+        string normalized = sectionType.Trim().Replace('_', ' ');
+        var parts = normalized
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Length == 1
+                ? part.ToUpperInvariant()
+                : char.ToUpperInvariant(part[0]) + part[1..].ToLowerInvariant());
+        return string.Join(" ", parts);
+    }
+
+    private static string SplitPascalCase(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(value.Length + 8);
+        for (int i = 0; i < value.Length; i++)
+        {
+            char ch = value[i];
+            if (i > 0 &&
+                char.IsUpper(ch) &&
+                (char.IsLower(value[i - 1]) || (i + 1 < value.Length && char.IsLower(value[i + 1]))))
+            {
+                builder.Append(' ');
+            }
+
+            builder.Append(ch);
+        }
+
+        return builder.ToString().Trim();
+    }
+
+    private static int? TryReadFirstAttributeAsInt(XElement element, params string[] attributeNames)
+    {
+        foreach (string attributeName in attributeNames)
+        {
+            string? value = GetAttributeValueIgnoreCase(element, attributeName);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            if (int.TryParse(value.Trim(), out int parsed) && parsed > 0)
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ReadFirstNonEmptyAttribute(XElement element, params string[] attributeNames)
+    {
+        foreach (string attributeName in attributeNames)
+        {
+            string? value = GetAttributeValueIgnoreCase(element, attributeName);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return NormalizeText(value);
+            }
+        }
+
+        return null;
+    }
+
+    private static string? GetAttributeValueIgnoreCase(XElement element, string attributeName)
+    {
+        XAttribute? attribute = element
+            .Attributes()
+            .FirstOrDefault(candidate => string.Equals(
+                candidate.Name.LocalName,
+                attributeName,
+                StringComparison.OrdinalIgnoreCase));
+        return attribute?.Value;
+    }
+
+    private static string NormalizeFormKey(string? value)
+    {
+        string normalized = NormalizeGroupKey(value);
+        return string.IsNullOrWhiteSpace(normalized)
+            ? string.Empty
+            : normalized.ToUpperInvariant();
+    }
+
+    private static bool TryParseFdaTextValue(string xml, out string textValue)
+    {
+        textValue = string.Empty;
+        if (!TryParseXmlRoot(xml, out XElement? root) || root == null)
+        {
+            return false;
+        }
+
+        XElement textElement = string.Equals(root.Name.LocalName, "FDAText", StringComparison.OrdinalIgnoreCase)
+            ? root
+            : root
+                .Descendants()
+                .FirstOrDefault(element => string.Equals(element.Name.LocalName, "FDAText", StringComparison.OrdinalIgnoreCase))
+              ?? root;
+        string value = NormalizeText(textElement.Value);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        textValue = value;
+        return true;
     }
 
     private HREQUEST OpenTable(string tableName, ID indexId)
@@ -3892,6 +5985,30 @@ private static bool TryUncompressNative(byte[] blob, out byte[] uncompressed)
         return ReadColumnMathNumeric(hRequest, tableName, columnName);
     }
 
+    private static byte[] ReadBlob(
+        TableLayout? layout,
+        IntPtr rowBuffer,
+        HREQUEST hRequest,
+        string tableName,
+        string columnName)
+    {
+        if (layout != null &&
+            rowBuffer != IntPtr.Zero &&
+            layout.TryGetFieldByColumn(columnName, out TableField blobField) &&
+            blobField.Type == TableFieldType.BlobValue)
+        {
+            IntPtr valuePtr = IntPtr.Add(rowBuffer, blobField.Offset);
+            if (TryReadBlobPointerAndSize(valuePtr, out IntPtr rowBlobPointer, out int rowBlobSize))
+            {
+                return CopyBlob(rowBlobPointer, rowBlobSize);
+            }
+
+            return Array.Empty<byte>();
+        }
+
+        return ReadBlob(hRequest, tableName, columnName);
+    }
+
     private static byte[] ReadBlob(HREQUEST hRequest, string tableName, string columnName)
     {
         var dbRef = new DBREF(tableName, columnName);
@@ -3900,33 +6017,173 @@ private static bool TryUncompressNative(byte[] blob, out byte[] uncompressed)
         {
             return Array.Empty<byte>();
         }
-        var blob = Marshal.PtrToStructure<JdeBlobValue>(valuePtr);
-        if (blob.lpValue == IntPtr.Zero || blob.lSize == 0)
+        if (!TryReadBlobPointerAndSize(valuePtr, out IntPtr blobPointer, out int blobSize))
         {
             return Array.Empty<byte>();
         }
-        int size = unchecked((int)blob.lSize);
-        if (size <= 0)
-        {
-            return Array.Empty<byte>();
-        }
-        var data = new byte[size];
-        Marshal.Copy(blob.lpValue, data, 0, size);
+
+        return CopyBlob(blobPointer, blobSize);
+    }
+
+    private static byte[] CopyBlob(IntPtr blobPointer, int blobSize)
+    {
+        var data = new byte[blobSize];
+        Marshal.Copy(blobPointer, data, 0, blobSize);
         return data;
     }
 
+    private static bool TryReadBlobPointerAndSize(IntPtr valuePtr, out IntPtr blobPointer, out int blobSize)
+    {
+        blobPointer = IntPtr.Zero;
+        blobSize = 0;
+
+        if (TryReadBlobPointerAndSize32(valuePtr, out blobPointer, out blobSize))
+        {
+            return true;
+        }
+
+        return IntPtr.Size == 8 &&
+               TryReadBlobPointerAndSize64(valuePtr, out blobPointer, out blobSize);
+    }
+
+    private static bool TryCreateMathNumeric(int value, out MATH_NUMERIC mathNumeric)
+    {
+        mathNumeric = MATH_NUMERIC.Create();
+        int result = ParseNumericString(ref mathNumeric, value.ToString(CultureInfo.InvariantCulture));
+        return result == 0;
+    }
+
+    private static bool TryReadBlobPointerAndSize32(IntPtr valuePtr, out IntPtr blobPointer, out int blobSize)
+    {
+        blobPointer = IntPtr.Zero;
+        blobSize = 0;
+
+        uint rawPointer = unchecked((uint)Marshal.ReadInt32(valuePtr, 0));
+        int rawSize = Marshal.ReadInt32(valuePtr, 4);
+        int rawMaxSize = Marshal.ReadInt32(valuePtr, 8);
+        return TryValidateBlobDescriptor(rawPointer, rawSize, rawMaxSize, out blobPointer, out blobSize);
+    }
+
+    private static bool TryReadBlobPointerAndSize64(IntPtr valuePtr, out IntPtr blobPointer, out int blobSize)
+    {
+        blobPointer = IntPtr.Zero;
+        blobSize = 0;
+
+        ulong rawPointer = unchecked((ulong)Marshal.ReadInt64(valuePtr, 0));
+        int rawSize = Marshal.ReadInt32(valuePtr, 8);
+        int rawMaxSize = Marshal.ReadInt32(valuePtr, 12);
+        return TryValidateBlobDescriptor(rawPointer, rawSize, rawMaxSize, out blobPointer, out blobSize);
+    }
+
+    private static bool TryValidateBlobDescriptor(
+        ulong rawPointer,
+        int rawSize,
+        int rawMaxSize,
+        out IntPtr blobPointer,
+        out int blobSize)
+    {
+        blobPointer = IntPtr.Zero;
+        blobSize = 0;
+
+        if (rawPointer == 0 || rawPointer < 0x10000 || rawSize <= 0 || rawSize > MaxBlobSizeBytes)
+        {
+            return false;
+        }
+
+        if (rawMaxSize > 0 && rawMaxSize < rawSize)
+        {
+            return false;
+        }
+
+        blobPointer = IntPtr.Size == 8
+            ? new IntPtr(unchecked((long)rawPointer))
+            : new IntPtr(unchecked((int)rawPointer));
+        blobSize = rawSize;
+        return IsReadableMemory(blobPointer, blobSize);
+    }
+
+    private static bool IsReadableMemory(IntPtr address, int byteCount)
+    {
+        if (address == IntPtr.Zero || byteCount <= 0)
+        {
+            return false;
+        }
+
+        if (VirtualQuery(
+                address,
+                out MemoryBasicInformation memoryInfo,
+                (nuint)Marshal.SizeOf<MemoryBasicInformation>()) == 0)
+        {
+            return false;
+        }
+
+        if ((memoryInfo.State & MemCommit) == 0)
+        {
+            return false;
+        }
+
+        if ((memoryInfo.Protect & (PageGuard | PageNoAccess)) != 0)
+        {
+            return false;
+        }
+
+        ulong start = unchecked((ulong)address.ToInt64());
+        ulong baseAddress = unchecked((ulong)memoryInfo.BaseAddress.ToInt64());
+        ulong regionSize = (ulong)memoryInfo.RegionSize;
+        ulong end = baseAddress + regionSize;
+        ulong requestedEnd = start + (ulong)byteCount;
+        return requestedEnd <= end;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = false)]
+    private static extern nuint VirtualQuery(
+        IntPtr lpAddress,
+        out MemoryBasicInformation lpBuffer,
+        nuint dwLength);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MemoryBasicInformation
+    {
+        public IntPtr BaseAddress;
+        public IntPtr AllocationBase;
+        public uint AllocationProtect;
+        public nuint RegionSize;
+        public uint State;
+        public uint Protect;
+        public uint Type;
+    }
+
+    private const int MaxBlobSizeBytes = 64 * 1024 * 1024;
+    private const uint MemCommit = 0x1000;
+    private const uint PageNoAccess = 0x01;
+    private const uint PageGuard = 0x100;
+
     private static void ApplyObjectNameSelection(HREQUEST hRequest, string objectName)
     {
-        if (string.IsNullOrWhiteSpace(objectName))
+        ApplyStringSelection(
+            hRequest,
+            F98740Structures.TableName,
+            F98740Structures.Columns.ObjectName,
+            objectName);
+    }
+
+    private static void ApplyStringSelection(
+        HREQUEST hRequest,
+        string tableName,
+        string columnName,
+        string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
         {
             return;
         }
-        IntPtr valuePtr = Marshal.StringToHGlobalUni(objectName);
+
+        IntPtr valuePtr = Marshal.StringToHGlobalUni(value);
         try
         {
             JDB_ClearSelection(hRequest);
             var select = new SELECTSTRUCT[1];
-            select[0].Item1 = new DBREF(F98740Structures.TableName, F98740Structures.Columns.ObjectName, 0);
+            select[0].Item1 = new DBREF(tableName, columnName, 0);
             select[0].Item2 = new DBREF(string.Empty, string.Empty, 0);
             select[0].lpValue = valuePtr;
             select[0].nValues = 1;
@@ -3975,6 +6232,22 @@ private static bool TryUncompressNative(byte[] blob, out byte[] uncompressed)
     {
         return (text ?? string.Empty).TrimEnd('\0', ' ');
     }
+
+    private static string NormalizeSingleLineLabel(string text)
+    {
+        string normalized = NormalizeText(text);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return string.Empty;
+        }
+
+        var parts = normalized
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 0
+            ? string.Empty
+            : string.Join(" ", parts);
+    }
+
     private static class GbrSpecParser
     {
         private const short GRT_EVENT = 1;
@@ -4631,4 +6904,105 @@ private static bool TryUncompressNative(byte[] blob, out byte[] uncompressed)
         int Id3,
         string EventSpecKey
     );
+
+    private readonly record struct EventRulesControlKey(string FormName, int ControlId);
+    private readonly record struct EventRulesSectionKey(string Version, string FormName);
+    private readonly record struct ReportTextKey(string Version, int TextId);
+
+    private sealed record ApplicationTreeMetadata(
+        string ObjectName,
+        IReadOnlyDictionary<string, string> FormDescriptions,
+        IReadOnlyDictionary<EventRulesControlKey, ApplicationControlMetadata> ControlMetadata,
+        IReadOnlyDictionary<EventRulesSectionKey, ReportSectionMetadata> SectionMetadata)
+    {
+        public static ApplicationTreeMetadata Empty { get; } = new(
+            string.Empty,
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            new Dictionary<EventRulesControlKey, ApplicationControlMetadata>(),
+            new Dictionary<EventRulesSectionKey, ReportSectionMetadata>());
+    }
+
+    private sealed record ApplicationControlDescriptor
+    {
+        public static ApplicationControlDescriptor Empty { get; } = new();
+
+        public string ComponentTypeName { get; init; } = string.Empty;
+        public int? TextId { get; init; }
+        public string? DataStructureName { get; init; }
+        public IReadOnlyList<KeyValuePair<string, string>> Attributes { get; init; } =
+            Array.Empty<KeyValuePair<string, string>>();
+        public int? ParentControlId { get; init; }
+        public int? DisplayOrder { get; init; }
+        public bool IsGridContainer { get; init; }
+        public string? AutoBehavior { get; init; }
+        public int Score { get; init; }
+    }
+
+    private sealed record ApplicationControlMetadata(
+        string DisplayLabel,
+        string ConfigurationSummary,
+        string? DataStructureName,
+        string? ComponentTypeName,
+        int? TextId,
+        int? ParentControlId,
+        int? DisplayOrder,
+        bool IsGridContainer);
+
+    private sealed record ReportSectionDescriptor
+    {
+        public static ReportSectionDescriptor Empty { get; } = new();
+
+        public int SectionId { get; init; }
+        public int? TextId { get; init; }
+        public string SectionType { get; init; } = string.Empty;
+        public int PropertyFlags { get; init; }
+        public int StyleFlags { get; init; }
+        public int Left { get; init; }
+        public int Top { get; init; }
+        public int Width { get; init; }
+        public int Height { get; init; }
+        public string? BusinessViewName { get; init; }
+    }
+
+    private sealed record ReportSectionMetadata(
+        string SectionName,
+        int SectionId,
+        string SectionType,
+        bool Visible,
+        bool AbsolutePositional,
+        bool PageBreakAfter,
+        bool Conditional,
+        bool ReprintAtPageBreak,
+        int Left,
+        int Top,
+        int Width,
+        int Height,
+        string? BusinessViewName);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 1)]
+    private struct JdeSpecKeyObjectName
+    {
+        public NID ObjectName;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 1)]
+    private struct JdeSpecKeyRecordTypeMath
+    {
+        public MATH_NUMERIC RecordType;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 1)]
+    private struct F98751KeyObjectRecordTypeForm
+    {
+        public NID ObjectName;
+        public MATH_NUMERIC RecordType;
+        public NID FormName;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 1)]
+    private struct F98761KeyObjectRecordType
+    {
+        public NID ObjectName;
+        public MATH_NUMERIC RecordType;
+    }
 }

@@ -21,12 +21,74 @@
                     <Style Selector="TreeViewItem" x:CompileBindings="False">
                         <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
                     </Style>
+                    <Style Selector="TreeViewItem /template/ ToggleButton" x:CompileBindings="False">
+                        <Setter Property="Width" Value="0" />
+                        <Setter Property="Height" Value="0" />
+                        <Setter Property="MinWidth" Value="0" />
+                        <Setter Property="MinHeight" Value="0" />
+                        <Setter Property="Margin" Value="0" />
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Opacity" Value="0" />
+                        <Setter Property="IsHitTestVisible" Value="False" />
+                    </Style>
                 </TreeView.Styles>
                 <TreeView.ItemTemplate>
                     <TreeDataTemplate DataType="models:JdeEventRulesNode"
                                       x:DataType="models:JdeEventRulesNode"
                                       ItemsSource="{Binding Children}">
-                        <TextBlock Text="{Binding Name}" />
+                        <Grid ColumnDefinitions="20,*"
+                              ColumnSpacing="4">
+                            <ToggleButton Grid.Column="0"
+                                          Width="18"
+                                          Height="18"
+                                          MinWidth="18"
+                                          MinHeight="18"
+                                          Padding="0"
+                                          Margin="0"
+                                          Background="{DynamicResource AppWindowBackgroundBrush}"
+                                          BorderBrush="{DynamicResource AppBorderStrongBrush}"
+                                          BorderThickness="1"
+                                          CornerRadius="2"
+                                          Cursor="Hand"
+                                          Focusable="False"
+                                          IsVisible="{Binding HasChildren}"
+                                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource AncestorType=TreeViewItem}, Mode=TwoWay}">
+                                <ToggleButton.Styles>
+                                    <Style Selector="ToggleButton">
+                                        <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+                                        <Setter Property="Content" Value="+" />
+                                        <Setter Property="Template">
+                                            <ControlTemplate>
+                                                <Border Background="{TemplateBinding Background}"
+                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                        CornerRadius="{TemplateBinding CornerRadius}">
+                                                    <ContentPresenter Content="{TemplateBinding Content}"
+                                                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                                      HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center" />
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter>
+                                    </Style>
+                                    <Style Selector="ToggleButton:pointerover">
+                                        <Setter Property="Background" Value="{DynamicResource AppAccentBrush}" />
+                                        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBorderBrush}" />
+                                        <Setter Property="Foreground" Value="White" />
+                                    </Style>
+                                    <Style Selector="ToggleButton:pressed">
+                                        <Setter Property="Background" Value="{DynamicResource AppAccentBorderBrush}" />
+                                        <Setter Property="Foreground" Value="White" />
+                                    </Style>
+                                    <Style Selector="ToggleButton:checked">
+                                        <Setter Property="Content" Value="-" />
+                                    </Style>
+                                </ToggleButton.Styles>
+                            </ToggleButton>
+                            <TextBlock Grid.Column="1"
+                                       VerticalAlignment="Center"
+                                       Text="{Binding Name}" />
+                        </Grid>
                     </TreeDataTemplate>
                 </TreeView.ItemTemplate>
             </TreeView>
@@ -46,26 +108,150 @@
                 <TextBlock Text="{Binding DataStructureName}"
                            FontSize="11"
                            Foreground="{DynamicResource AppTextSecondaryBrush}" />
-                <TextBlock Text="{Binding StatusMessage}"
+                <TextBlock Text="{Binding ComponentConfiguration}"
                            FontSize="11"
-                           Foreground="{DynamicResource AppTextSecondaryBrush}" />
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           TextWrapping="Wrap" />
+                <Grid ColumnDefinitions="*,Auto"
+                      ColumnSpacing="12">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding StatusMessage}"
+                               FontSize="11"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}" />
+                    <CheckBox Grid.Column="1"
+                              IsVisible="{Binding IsEventRulesView}"
+                              IsChecked="{Binding ShowRawXml, Mode=TwoWay}"
+                              Content="Show Raw XML"
+                              FontSize="11"
+                              VerticalAlignment="Center" />
+                </Grid>
             </StackPanel>
 
-            <Border Grid.Row="1"
-                    Margin="12"
-                    BorderBrush="{DynamicResource AppBorderStrongBrush}"
-                    BorderThickness="1"
-                    CornerRadius="4"
-                    IsVisible="{Binding IsEventRulesView}">
-                <AvaloniaEdit:TextEditor x:Name="EventRulesEditor"
-                                         IsReadOnly="True"
-                                         ShowLineNumbers="False"
-                                         FontFamily="Consolas"
-                                         FontSize="12"
-                                         Background="{DynamicResource AppWindowBackgroundBrush}"
-                                         HorizontalScrollBarVisibility="Auto"
-                                         VerticalScrollBarVisibility="Auto" />
-            </Border>
+            <Grid Grid.Row="1"
+                  Margin="12"
+                  RowDefinitions="Auto,*"
+                  IsVisible="{Binding IsEventRulesView}">
+                <StackPanel Grid.Row="0"
+                            IsVisible="{Binding HasMetadataSections}"
+                            Spacing="6">
+                    <ListBox x:Name="MetadataTabs"
+                             ItemsSource="{Binding SelectedMetadataSections}"
+                             SelectedItem="{Binding SelectedMetadataSection, Mode=TwoWay}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             FontSize="11">
+                        <ListBox.Styles>
+                            <Style Selector="ListBoxItem">
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="Margin" Value="0" />
+                                <Setter Property="Background" Value="Transparent" />
+                                <Setter Property="BorderBrush" Value="Transparent" />
+                                <Setter Property="BorderThickness" Value="0" />
+                            </Style>
+                            <Style Selector="ListBoxItem:pointerover">
+                                <Setter Property="Background" Value="Transparent" />
+                                <Setter Property="BorderBrush" Value="Transparent" />
+                                <Setter Property="BorderThickness" Value="0" />
+                            </Style>
+                            <Style Selector="ListBoxItem:selected">
+                                <Setter Property="Background" Value="Transparent" />
+                                <Setter Property="BorderBrush" Value="Transparent" />
+                                <Setter Property="BorderThickness" Value="0" />
+                            </Style>
+                            <Style Selector="ListBoxItem Border#MetadataTabBorder">
+                                <Setter Property="Background" Value="{DynamicResource AppWindowBackgroundBrush}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource AppBorderStrongBrush}" />
+                            </Style>
+                            <Style Selector="ListBoxItem:pointerover Border#MetadataTabBorder">
+                                <Setter Property="Background" Value="{DynamicResource AppBorderBrush}" />
+                            </Style>
+                            <Style Selector="ListBoxItem:selected Border#MetadataTabBorder">
+                                <Setter Property="Background" Value="{DynamicResource AppAccentBrush}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBorderBrush}" />
+                            </Style>
+                            <Style Selector="ListBoxItem TextBlock#MetadataTabText">
+                                <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+                            </Style>
+                            <Style Selector="ListBoxItem:selected TextBlock#MetadataTabText">
+                                <Setter Property="Foreground" Value="White" />
+                            </Style>
+                        </ListBox.Styles>
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="6" />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="models:JdeSpecMetadataSection"
+                                          x:DataType="models:JdeSpecMetadataSection">
+                                <Border x:Name="MetadataTabBorder"
+                                        Padding="10,6"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Cursor="Hand">
+                                    <TextBlock x:Name="MetadataTabText"
+                                               Text="{Binding Title}" />
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <Border IsVisible="{Binding HasSelectedMetadataSection}"
+                            BorderBrush="{DynamicResource AppBorderStrongBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="8">
+                        <ContentControl Content="{Binding SelectedMetadataSection}">
+                            <ContentControl.ContentTemplate>
+                                <DataTemplate DataType="models:JdeSpecMetadataSection"
+                                              x:DataType="models:JdeSpecMetadataSection">
+                                    <ScrollViewer MaxHeight="260"
+                                                  HorizontalScrollBarVisibility="Disabled"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl ItemsSource="{Binding Items}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="models:JdeSpecMetadataItem"
+                                                              x:DataType="models:JdeSpecMetadataItem">
+                                                    <Grid Margin="0,0,0,6"
+                                                          ColumnDefinitions="220,*"
+                                                          ColumnSpacing="12">
+                                                        <TextBlock Grid.Column="0"
+                                                                   Text="{Binding Label}"
+                                                                   FontSize="11"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource AppTextPrimaryBrush}" />
+                                                        <TextBlock Grid.Column="1"
+                                                                   Text="{Binding Value}"
+                                                                   FontSize="11"
+                                                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                                   TextWrapping="Wrap" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </DataTemplate>
+                            </ContentControl.ContentTemplate>
+                        </ContentControl>
+                    </Border>
+                </StackPanel>
+
+                <Border Grid.Row="1"
+                        Margin="0,12,0,0"
+                        BorderBrush="{DynamicResource AppBorderStrongBrush}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        IsVisible="{Binding ShowEventRulesDocument}">
+                    <AvaloniaEdit:TextEditor x:Name="EventRulesEditor"
+                                             IsReadOnly="True"
+                                             ShowLineNumbers="False"
+                                             FontFamily="Consolas"
+                                             FontSize="12"
+                                             Background="{DynamicResource AppWindowBackgroundBrush}"
+                                             HorizontalScrollBarVisibility="Auto"
+                                             VerticalScrollBarVisibility="Auto" />
+                </Border>
+            </Grid>
 
             <Grid x:Name="CodeEditorsGrid"
                   Grid.Row="1"

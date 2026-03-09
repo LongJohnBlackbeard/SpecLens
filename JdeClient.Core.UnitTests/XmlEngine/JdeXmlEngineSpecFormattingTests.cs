@@ -148,4 +148,121 @@ public class JdeXmlEngineSpecFormattingTests
         await Assert.That(result.Text.Contains("|   CO EFGH <- Col B [EFGH]", StringComparison.Ordinal)).IsTrue();
         await Assert.That(result.Text.Contains("|   10 = Col C [IJKL]", StringComparison.Ordinal)).IsTrue();
     }
+
+    [Test]
+    public async Task GetFormattedEventRulesAsync_RebuildsCriteriaWhenCritDescIsMissingOrTruncated()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeEventRulesXmlDocument>>(session);
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeSpecXmlDocument>>(session);
+        TestHelpers.SetupExecuteAsync<List<JdeDataDictionaryDetails>>(session);
+
+        var eventEngine = Substitute.For<IEventRulesQueryEngine>();
+        var eventFactory = Substitute.For<IEventRulesQueryEngineFactory>();
+        eventFactory.Create(Arg.Any<HUSER>(), Arg.Any<JdeClientOptions>()).Returns(eventEngine);
+
+        var tableEngine = Substitute.For<IJdeTableQueryEngine>();
+        var tableFactory = Substitute.For<IJdeTableQueryEngineFactory>();
+        tableFactory.Create(Arg.Any<JdeClientOptions>()).Returns(tableEngine);
+
+        session.UserHandle.Returns(new HUSER { Handle = new IntPtr(99) });
+
+        tableEngine.GetDataDictionaryDetails(Arg.Any<IEnumerable<string>>())
+            .Returns(new List<JdeDataDictionaryDetails>
+            {
+                new()
+                {
+                    DataItem = "SHPN",
+                    Texts = { new JdeDataDictionaryText { DataItem = "SHPN", TextType = 'C', Text = "Shipment Number" } }
+                },
+                new()
+                {
+                    DataItem = "IVI",
+                    Texts = { new JdeDataDictionaryText { DataItem = "IVI", TextType = 'C', Text = "Inventory Interface Y/N - Distribution" } }
+                },
+                new()
+                {
+                    DataItem = "LNTY",
+                    Texts = { new JdeDataDictionaryText { DataItem = "LNTY", TextType = 'C', Text = "Line Type" } }
+                }
+            });
+
+        const string eventXml = "<GBRSPEC szEventSpecKey=\"EV1\" xmlns=\"http://jde\">" +
+                                "<GBRVAR szVariableName=\"frm_PrevShipmentNumber_SHPN\">" +
+                                "<DSOBJVariable idVariable=\"199\" szDict=\"SHPN\" wStyle=\"8\" dataType=\"MathNumeric\" size=\"8\" />" +
+                                "</GBRVAR>" +
+                                "<GBRCRIT lpszCritDesc=\"\">" +
+                                "<CRE_HEADER>" +
+                                "<CRE_NODE eCompType=\"NOT_EQ\">" +
+                                "<zSubject><DSOBJBSTableColumn><Dbref szTable=\"F4211\" szDict=\"SHPN\" /></DSOBJBSTableColumn></zSubject>" +
+                                "<zPredicate><DSOBJVariable idVariable=\"199\" szDict=\"SHPN\" wStyle=\"8\" dataType=\"MathNumeric\" size=\"8\" /></zPredicate>" +
+                                "</CRE_NODE>" +
+                                "<CRE_NODE eCompType=\"GR\">" +
+                                "<zSubject><DSOBJBSTableColumn><Dbref szTable=\"F4211\" szDict=\"SHPN\" /></DSOBJBSTableColumn></zSubject>" +
+                                "<zPredicate><DSOBJLiteral><LiteralString>0</LiteralString></DSOBJLiteral></zPredicate>" +
+                                "</CRE_NODE>" +
+                                "</CRE_HEADER>" +
+                                "</GBRCRIT>" +
+                                "<GBRCRIT lpszCritDesc=\"V\">" +
+                                "<CRE_HEADER>" +
+                                "<CRE_NODE eCompType=\"EQUAL\">" +
+                                "<zSubject><DSOBJBSTableColumn><Dbref szTable=\"F40205\" szDict=\"IVI\" /></DSOBJBSTableColumn></zSubject>" +
+                                "<zPredicate><DSOBJLiteral><LiteralString>Y</LiteralString></DSOBJLiteral></zPredicate>" +
+                                "</CRE_NODE>" +
+                                "<CRE_NODE eCompType=\"NOT_EQ\">" +
+                                "<zSubject><DSOBJBSTableColumn><Dbref szTable=\"F40205\" szDict=\"LNTY\" /></DSOBJBSTableColumn></zSubject>" +
+                                "<zPredicate><DSOBJLiteral><LiteralString>V</LiteralString></DSOBJLiteral></zPredicate>" +
+                                "</CRE_NODE>" +
+                                "</CRE_HEADER>" +
+                                "</GBRCRIT>" +
+                                "<GBRASSIGN textString=\"VA frm_PrevShipmentNumber_SHPN = BC Shipment Number (F4211)(SHPN)\">" +
+                                "<ObjTo><DSOBJVariable idVariable=\"199\" szDict=\"SHPN\" wStyle=\"8\" dataType=\"MathNumeric\" size=\"8\" /></ObjTo>" +
+                                "<ObjFrom><DSOBJBSTableColumn><Dbref szTable=\"F4211\" szDict=\"SHPN\" /></DSOBJBSTableColumn></ObjFrom>" +
+                                "</GBRASSIGN>" +
+                                "</GBRSPEC>";
+
+        const string dataXml = "<root szTmplName=\"D0001\" xmlns=\"http://jde\"><Template /></root>";
+
+        eventEngine.GetEventRulesXmlDocuments("EV1").Returns(new List<JdeEventRulesXmlDocument>
+        {
+            new() { EventSpecKey = "EV1", Xml = eventXml, RecordCount = 1 }
+        });
+
+        eventEngine.GetDataStructureXmlDocuments("D0001").Returns(new List<JdeSpecXmlDocument>
+        {
+            new() { SpecKey = "D0001", Xml = dataXml, RecordCount = 1 }
+        });
+
+        var client = new JdeClient(
+            session,
+            new JdeClientOptions(),
+            tableQueryEngineFactory: tableFactory,
+            eventRulesQueryEngineFactory: eventFactory);
+
+        // Act
+        var result = await client.GetFormattedEventRulesAsync("EV1", "D0001");
+
+        // Assert
+        await Assert.That(result.Text.Contains(
+                "If BC Shipment Number (F4211.0) [SHPN] is not equal to VA frm_PrevShipmentNumber_SHPN [SHPN]",
+                StringComparison.Ordinal))
+            .IsTrue();
+        await Assert.That(result.Text.Contains(
+                "And BC Shipment Number (F4211.0) [SHPN] is greater than \"0\"",
+                StringComparison.Ordinal))
+            .IsTrue();
+        await Assert.That(result.Text.Contains(
+                "If BC Inventory Interface Y/N - Distribution (F40205.0) [IVI] is equal to \"Y\"",
+                StringComparison.Ordinal))
+            .IsTrue();
+        await Assert.That(result.Text.Contains(
+                "And BC Line Type (F40205.0) [LNTY] is not equal to \"V\"",
+                StringComparison.Ordinal))
+            .IsTrue();
+        await Assert.That(result.Text.Contains(
+                "VA frm_PrevShipmentNumber_SHPN [SHPN] = BC Shipment Number (F4211.0) [SHPN]",
+                StringComparison.Ordinal))
+            .IsTrue();
+    }
 }

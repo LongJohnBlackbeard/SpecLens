@@ -17,6 +17,12 @@ public static class JdeSpecEncapApi
         JdeStructures.JdeSpecFileType eType);
 
     [DllImport(DllName, CallingConvention = CallingConvention.StdCall)]
+    public static extern int jdeSpecConvertToXML(
+        IntPtr hSpec,
+        ref JdeStructures.JdeSpecData pSpecBinaryData,
+        ref JdeStructures.JdeSpecData pSpecXMLData);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.StdCall)]
     public static extern int jdeSpecConvertToXML_UTF16(
         IntPtr hSpec,
         ref JdeStructures.JdeSpecData pSpecBinaryData,

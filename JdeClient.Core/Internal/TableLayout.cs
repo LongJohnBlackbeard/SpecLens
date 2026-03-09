@@ -15,7 +15,8 @@ internal enum TableFieldType
     JCharSingle,
     Id,
     JdeDate,
-    MathNumeric
+    MathNumeric,
+    BlobValue
 }
 
 /// <summary>
@@ -132,6 +133,7 @@ internal sealed class TableLayout
             TableFieldType.Id => new TableValue(field.Type, ReadInt32(buffer, field)),
             TableFieldType.JdeDate => new TableValue(field.Type, ReadJdeDate(buffer, field)),
             TableFieldType.MathNumeric => new TableValue(field.Type, ReadMathNumeric(buffer, field)),
+            TableFieldType.BlobValue => new TableValue(field.Type, ReadBlobValue(buffer, field)),
             _ => new TableValue(field.Type, string.Empty)
         };
     }
@@ -182,6 +184,11 @@ internal sealed class TableLayout
         return MathNumericParser.ToString(IntPtr.Add(buffer, field.Offset));
     }
 
+    private static TableBlobValue ReadBlobValue(IntPtr buffer, TableField field)
+    {
+        return new TableBlobValue(IntPtr.Add(buffer, field.Offset), field.Length);
+    }
+
     private static bool LooksLikeUnicode(byte[] bytes, out bool bigEndian)
     {
         bigEndian = false;
@@ -227,6 +234,18 @@ internal readonly struct TableValue
     public object? Value { get; }
 }
 
+internal readonly struct TableBlobValue
+{
+    public TableBlobValue(IntPtr descriptorPointer, int descriptorLength)
+    {
+        DescriptorPointer = descriptorPointer;
+        DescriptorLength = descriptorLength;
+    }
+
+    public IntPtr DescriptorPointer { get; }
+    public int DescriptorLength { get; }
+}
+
 [ExcludeFromCodeCoverage]
 internal static class TableLayoutLoader
 {
@@ -240,6 +259,7 @@ internal static class TableLayoutLoader
     private static readonly Regex IdField = new(@"^\s*ID\s+(\w+)\s*;", RegexOptions.IgnoreCase);
     private static readonly Regex JdeDateField = new(@"^\s*JDEDATE\s+(\w+)\s*;", RegexOptions.IgnoreCase);
     private static readonly Regex MathNumericField = new(@"^\s*MATH_NUMERIC\s+(\w+)\s*;", RegexOptions.IgnoreCase);
+    private static readonly Regex BlobValueField = new(@"^\s*BLOBVALUE\s+(\w+)\s*;", RegexOptions.IgnoreCase);
     private static readonly Regex NidDefine = new(@"^\s*#define\s+NID_\w+\s+_J\(\""(?<name>[^\""]+)\""\)", RegexOptions.IgnoreCase);
     private static readonly Regex OffsetComment = new(@"/\*\s*(\d+)\s*to\s*(\d+)\s*\*/", RegexOptions.IgnoreCase);
 
@@ -416,6 +436,24 @@ internal static class TableLayoutLoader
                 }
                 maxEnd = Math.Max(maxEnd, fieldEnd);
                 offset = Math.Max(offset, fieldOffset + byteLength);
+                continue;
+            }
+
+            match = BlobValueField.Match(line);
+            if (match.Success)
+            {
+                string name = match.Groups[1].Value;
+                int byteLength = ResolveBlobByteLength(commentStart, commentEnd);
+                ResolveFieldOffsets(commentStart, offset, 1, byteLength, out int fieldOffset, out int fieldEnd);
+                var field = new TableField(name, TableFieldType.BlobValue, fieldOffset, byteLength, pendingColumn);
+                fields[name] = field;
+                if (!string.IsNullOrWhiteSpace(pendingColumn))
+                {
+                    columns[pendingColumn] = field;
+                    pendingColumn = null;
+                }
+                maxEnd = Math.Max(maxEnd, fieldEnd);
+                offset = Math.Max(offset, fieldOffset + byteLength);
             }
         }
 
@@ -434,6 +472,21 @@ internal static class TableLayoutLoader
         }
 
         return 1;
+    }
+
+    private static int ResolveBlobByteLength(int? commentStart, int? commentEnd)
+    {
+        // Runtime BLOBVALUE uses pointer + three 32-bit size fields.
+        int nativeBlobLength = IntPtr.Size + (sizeof(uint) * 3);
+
+        if (commentStart.HasValue && commentEnd.HasValue && commentEnd.Value >= commentStart.Value)
+        {
+            int commentLength = commentEnd.Value - commentStart.Value + 1;
+            // Some generated headers still report legacy 16-byte BLOBVALUE spans on x64.
+            return Math.Max(commentLength, nativeBlobLength);
+        }
+
+        return nativeBlobLength;
     }
 
     private static void ResolveFieldOffsets(

@@ -128,6 +128,95 @@ public class JdeClientEventRulesFormattingTests
     }
 
     [Test]
+    public async Task GetFormattedEventRulesAsync_OutputFormatXml_ReturnsXmlWithoutDataStructureLookup()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeEventRulesXmlDocument>>(session);
+
+        var eventEngine = Substitute.For<IEventRulesQueryEngine>();
+        var eventFactory = Substitute.For<IEventRulesQueryEngineFactory>();
+        eventFactory.Create(Arg.Any<HUSER>(), Arg.Any<JdeClientOptions>()).Returns(eventEngine);
+
+        eventEngine.GetEventRulesXmlDocuments("EV1").Returns(new List<JdeEventRulesXmlDocument>
+        {
+            new()
+            {
+                EventSpecKey = "EV1",
+                Xml = "<GBRSPEC szEventSpecKey=\"EV1\" xmlns=\"http://jde\"><GBREvent/></GBRSPEC>",
+                RecordCount = 1
+            }
+        });
+
+        var client = new JdeClient(session, new JdeClientOptions(), eventRulesQueryEngineFactory: eventFactory);
+        var node = new JdeEventRulesNode
+        {
+            Name = "Event 11",
+            NodeType = JdeEventRulesNodeType.Event,
+            EventSpecKey = "EV1"
+        };
+
+        // Act
+        var result = await client.GetFormattedEventRulesAsync(node, JdeEventRulesOutputFormat.Xml);
+
+        // Assert
+        await Assert.That(result.StatusMessage).IsEqualTo("Event rules XML loaded.");
+        await Assert.That(result.Text.Contains("<GBRSPEC", StringComparison.Ordinal)).IsTrue();
+        eventEngine.DidNotReceive().GetDataStructureXmlDocuments(Arg.Any<string>());
+    }
+
+    [Test]
+    public async Task GetFormattedEventRulesAsync_OutputFormatXml_CentralLocation_UsesExplicitSpecLocationLookups()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeEventRulesXmlDocument>>(session);
+
+        var eventEngine = Substitute.For<IEventRulesQueryEngine>();
+        var eventFactory = Substitute.For<IEventRulesQueryEngineFactory>();
+        eventFactory.Create(Arg.Any<HUSER>(), Arg.Any<JdeClientOptions>()).Returns(eventEngine);
+
+        eventEngine.GetEventRulesXmlDocuments(
+                "EV1",
+                JdeSpecLocation.CentralObjects,
+                "Central Objects - PY920")
+            .Returns(new List<JdeEventRulesXmlDocument>
+            {
+                new()
+                {
+                    EventSpecKey = "EV1",
+                    Xml = "<GBRSPEC szEventSpecKey=\"EV1\" xmlns=\"http://jde\"><GBREvent/></GBRSPEC>",
+                    RecordCount = 1
+                }
+            });
+
+        var client = new JdeClient(session, new JdeClientOptions(), eventRulesQueryEngineFactory: eventFactory);
+        var node = new JdeEventRulesNode
+        {
+            Name = "Event 11",
+            NodeType = JdeEventRulesNodeType.Event,
+            EventSpecKey = "EV1"
+        };
+
+        // Act
+        _ = await client.GetFormattedEventRulesAsync(
+            node,
+            JdeEventRulesOutputFormat.Xml,
+            useCentralLocation: true,
+            dataSourceOverride: "Central Objects - PY920");
+
+        // Assert
+        eventEngine.Received(1).GetEventRulesXmlDocuments(
+            "EV1",
+            JdeSpecLocation.CentralObjects,
+            "Central Objects - PY920");
+        eventEngine.DidNotReceive().GetDataStructureXmlDocuments(
+            Arg.Any<string>(),
+            Arg.Any<JdeSpecLocation>(),
+            Arg.Any<string?>());
+    }
+
+    [Test]
     public async Task GetFormattedEventRulesAsync_EventXmlMissing_ReturnsMessage()
     {
         // Arrange
@@ -326,6 +415,74 @@ public class JdeClientEventRulesFormattingTests
         };
 
         await Assert.That(JdeClient.ResolveTemplateName(node)).IsEqualTo("D5678");
+    }
+
+    [Test]
+    public async Task ResolveTemplateName_EventNodeLabel_ReturnsEmpty()
+    {
+        var node = new JdeEventRulesNode
+        {
+            Name = "Event 11",
+            NodeType = JdeEventRulesNodeType.Event,
+            DataStructureName = null
+        };
+
+        await Assert.That(JdeClient.ResolveTemplateName(node)).IsEqualTo(string.Empty);
+    }
+
+    [Test]
+    public async Task InferTemplateNameFromEventDocuments_FindsTemplateReference()
+    {
+        var documents = new List<JdeEventRulesXmlDocument>
+        {
+            new()
+            {
+                EventSpecKey = "EV1",
+                Xml = "<GBRSPEC szEventSpecKey=\"EV1\" xmlns=\"http://jde\"><GBRASSIGN><ObjTo><DSOBJMember szTmplName=\"D5555\" idItem=\"1\"/></ObjTo><ObjFrom><DSOBJLiteral><LiteralString>X</LiteralString></DSOBJLiteral></ObjFrom></GBRASSIGN></GBRSPEC>",
+                RecordCount = 1
+            }
+        };
+
+        await Assert.That(JdeClient.InferTemplateNameFromEventDocuments(documents)).IsEqualTo("D5555");
+    }
+
+    [Test]
+    public async Task GetFormattedEventRulesAsync_EventNodeWithoutTemplate_UsesDynamicFallback()
+    {
+        // Arrange
+        var session = Substitute.For<IJdeSession>();
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeEventRulesXmlDocument>>(session);
+        TestHelpers.SetupExecuteAsync<IReadOnlyList<JdeSpecXmlDocument>>(session);
+
+        var eventEngine = Substitute.For<IEventRulesQueryEngine>();
+        var eventFactory = Substitute.For<IEventRulesQueryEngineFactory>();
+        eventFactory.Create(Arg.Any<HUSER>(), Arg.Any<JdeClientOptions>()).Returns(eventEngine);
+
+        eventEngine.GetEventRulesXmlDocuments("EV1").Returns(new List<JdeEventRulesXmlDocument>
+        {
+            new()
+            {
+                EventSpecKey = "EV1",
+                Xml = "<GBRSPEC szEventSpecKey=\"EV1\" xmlns=\"http://jde\"><GBRCOMMENT><text>// Dynamic event</text></GBRCOMMENT></GBRSPEC>",
+                RecordCount = 1
+            }
+        });
+
+        var client = new JdeClient(session, new JdeClientOptions(), eventRulesQueryEngineFactory: eventFactory);
+        var node = new JdeEventRulesNode
+        {
+            Name = "Event 11",
+            NodeType = JdeEventRulesNodeType.Event,
+            EventSpecKey = "EV1"
+        };
+
+        // Act
+        var result = await client.GetFormattedEventRulesAsync(node);
+
+        // Assert
+        await Assert.That(result.StatusMessage).IsEqualTo("Event rules loaded.");
+        await Assert.That(result.Text.Contains("// Dynamic event", StringComparison.Ordinal)).IsTrue();
+        eventEngine.DidNotReceive().GetDataStructureXmlDocuments(Arg.Any<string>());
     }
 
     [Test]

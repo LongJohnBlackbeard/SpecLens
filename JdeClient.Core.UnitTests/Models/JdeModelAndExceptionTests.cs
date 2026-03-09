@@ -546,6 +546,11 @@ public class JdeModelAndExceptionTests
             NodeType = JdeEventRulesNodeType.Function,
             EventSpecKey = "EVSK001",
             DataStructureName = "D0100041",
+            VersionName = "ZJDE0001",
+            FormOrSectionName = "W01012A",
+            ControlId = 20,
+            EventId = "9860",
+            EventId3 = 2,
             Children = new[] { child },
             IsExpanded = true
         };
@@ -555,6 +560,11 @@ public class JdeModelAndExceptionTests
         await Assert.That(node.NodeType).IsEqualTo(JdeEventRulesNodeType.Function);
         await Assert.That(node.EventSpecKey).IsEqualTo("EVSK001");
         await Assert.That(node.DataStructureName).IsEqualTo("D0100041");
+        await Assert.That(node.VersionName).IsEqualTo("ZJDE0001");
+        await Assert.That(node.FormOrSectionName).IsEqualTo("W01012A");
+        await Assert.That(node.ControlId).IsEqualTo(20);
+        await Assert.That(node.EventId).IsEqualTo("9860");
+        await Assert.That(node.EventId3).IsEqualTo(2);
         await Assert.That(node.Children.Count).IsEqualTo(1);
         await Assert.That(node.IsExpanded).IsTrue();
         await Assert.That(node.HasEventRules).IsTrue();

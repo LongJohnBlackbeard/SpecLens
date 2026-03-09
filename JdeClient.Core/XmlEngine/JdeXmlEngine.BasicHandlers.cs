@@ -50,69 +50,63 @@ public partial class JdeXmlEngine
     // ReSharper disable once InconsistentNaming
     private string HandleGBRASSIGN(XElement xmlEventRuleBlock)
     {
-        // Get Assign Type and Text string
         var textString = xmlEventRuleBlock.Attribute("textString")?.Value ?? "ERROR";
-
         if (textString == "ERROR")
+        {
             return textString;
+        }
 
-        // Get Obj From and Obj To Sections
         var objTo = xmlEventRuleBlock.Descendants(_xmlNamespace + "ObjTo").FirstOrDefault();
         var objFrom = xmlEventRuleBlock.Descendants(_xmlNamespace + "ObjFrom").FirstOrDefault();
-        // Get the inner object
         var objToInner = objTo?.Descendants().FirstOrDefault();
         var objFromInner = objFrom?.Descendants().FirstOrDefault();
 
-        // Split the textString to get each side of the assignment
         var assignmentParts = textString.Split('=', 2);
         var targetVariable = assignmentParts.Length > 0 ? assignmentParts[0].Trim() : string.Empty;
         var assignedValue = assignmentParts.Length > 1 ? assignmentParts[1].Trim() : string.Empty;
-        var assignmentPartOne = "";
-        var assignmentPartTwo = "";
-        // TODO: At this point, the inner object elements could be different, handle them accordingly
-        switch (objToInner?.Name.LocalName)
+        string assignmentPartOne = ResolveAssignmentOperandLabel(objToInner, targetVariable, isTarget: true);
+        string assignmentPartTwo = ResolveAssignmentOperandLabel(objFromInner, assignedValue, isTarget: false);
+        return $"{assignmentPartOne} = {assignmentPartTwo}";
+    }
+
+    private string ResolveAssignmentOperandLabel(XElement? operandElement, string fallback, bool isTarget)
+    {
+        if (operandElement == null)
         {
-            case "DSOBJLiteral":
-                // Not expected for assignment targets.
-                break;
-            case "DSOBJVariable":
-                // Get the inner elements DD type
-                var targetDataDictionary = objToInner.Attribute("szDict")?.Value ?? "N/A";
-                assignmentPartOne = $"{targetVariable} [{targetDataDictionary}] = ";
-                break;
-            case "DSOBJMember":
-                // Get Element Id Attribute and find from the DS List
-                var dsItem = ResolveDataStructureItem(objToInner);
-                var targetAlias = dsItem?.Alias ?? "N/A";
-                assignmentPartOne = $"{targetVariable} [{targetAlias}] = ";
-                break;
-            // TODO: There could be other element types here. Will find out when looking at other ER Object Types
-            default:
-                assignmentPartOne = $"{targetVariable} = ";
-                break;
+            return fallback;
         }
 
-        assignmentPartTwo = assignedValue;
-        switch (objFromInner?.Name.LocalName)
+        switch (operandElement.Name.LocalName)
         {
             case "DSOBJLiteral":
-                assignmentPartTwo = WebUtility.HtmlDecode(assignmentPartTwo);
-                break;
+                return string.IsNullOrWhiteSpace(fallback)
+                    ? FormatLiteralValue(operandElement)
+                    : WebUtility.HtmlDecode(fallback);
             case "DSOBJVariable":
-                var assignedDataDictionary = objFromInner.Attribute("szDict")?.Value ?? "N/A";
-                assignmentPartTwo = $"{assignmentPartTwo} [{assignedDataDictionary}]";
-                break;
+                var variableAlias = operandElement.Attribute("szDict")?.Value;
+                return EnsureAliasSuffix(ResolveEventOperandLabel(operandElement, fallback), variableAlias);
             case "DSOBJMember":
-                var dsItem = ResolveDataStructureItem(objFromInner);
-                var assignedAlias = dsItem?.Alias ?? "N/A";
-                assignmentPartTwo = $"{assignmentPartTwo} [{assignedAlias}]";
-                break;
-            // TODO: There could be other element types here. Will find out when looking at other ER Object Types
+                var dsItem = ResolveDataStructureItem(operandElement);
+                return EnsureAliasSuffix(fallback, dsItem?.Alias);
+            case "DSOBJBSTableColumn":
+                return ResolveBusinessViewColumnLabel(
+                    operandElement,
+                    fallback,
+                    SplitQualifier(fallback).Qualifier ?? "BC");
+            case "DSOBJTableColumn":
+                return ResolveTableColumnOperandLabel(
+                    operandElement,
+                    fallback,
+                    SplitQualifier(fallback).Qualifier);
+            case "DSOBJGridColumn":
+            case "DSOBJFormControl":
+                return string.IsNullOrWhiteSpace(fallback)
+                    ? ResolveEventOperandLabel(operandElement, fallback)
+                    : fallback;
+            case "DSOBJExpression":
+                return fallback;
             default:
-                break;
+                return isTarget ? fallback : WebUtility.HtmlDecode(fallback);
         }
-
-        var completeAssignment = assignmentPartOne + assignmentPartTwo;
-        return completeAssignment;
     }
 }

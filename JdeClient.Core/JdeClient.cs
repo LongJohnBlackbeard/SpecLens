@@ -1467,8 +1467,39 @@ public partial class JdeClient : IDisposable
     }
 
     /// <summary>
-    /// Build the event rules tree for the supplied object.
+    /// Retrieve structured spec metadata for an interactive application (APPL).
     /// </summary>
+    public async Task<JdeInteractiveApplicationSpec> GetInteractiveApplicationSpecAsync(
+        string objectName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(objectName))
+        {
+            throw new ArgumentException("Object name is required.", nameof(objectName));
+        }
+
+        _session.EnsureConnected();
+
+        return await _session.ExecuteAsync(() =>
+        {
+            try
+            {
+                var engine = _eventRulesQueryEngineFactory.Create(_session.UserHandle, _options);
+                return engine.GetInteractiveApplicationSpec(objectName);
+            }
+            catch (Exception ex) when (ex is not JdeException)
+            {
+                throw new JdeApiException(
+                    "GetInteractiveApplicationSpecAsync",
+                    $"Failed to load application spec for {objectName}",
+                    ex);
+            }
+        }, cancellationToken);
+    }
+
+    /// <summary>
+     /// Build the event rules tree for the supplied object.
+     /// </summary>
     public async Task<JdeEventRulesNode> GetEventRulesTreeAsync(
         JdeObjectInfo jdeObject,
         CancellationToken cancellationToken = default)
