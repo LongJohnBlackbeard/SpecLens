@@ -29,6 +29,11 @@ internal interface IEventRulesQueryEngine
     JdeInteractiveApplicationSpec GetInteractiveApplicationSpec(string objectName);
 
     /// <summary>
+    /// Retrieve structured spec metadata for a batch application/report (UBE).
+    /// </summary>
+    JdeBatchApplicationSpec GetBatchApplicationSpec(string objectName);
+
+    /// <summary>
     /// Build the event rules tree for a batch application/report (UBE).
     /// </summary>
     JdeEventRulesNode GetReportEventRulesTree(string objectName);

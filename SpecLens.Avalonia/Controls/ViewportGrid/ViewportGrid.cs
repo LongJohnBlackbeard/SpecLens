@@ -37,11 +37,17 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
     public static readonly StyledProperty<int> TotalRowCountProperty =
         AvaloniaProperty.Register<ViewportGrid, int>(nameof(TotalRowCount), -1);
 
+    public static readonly StyledProperty<int> TrailingBlankRowCountProperty =
+        AvaloniaProperty.Register<ViewportGrid, int>(nameof(TrailingBlankRowCount), 0);
+
     public static readonly StyledProperty<IBrush?> GridLineBrushProperty =
         AvaloniaProperty.Register<ViewportGrid, IBrush?>(nameof(GridLineBrush), Brushes.LightGray);
 
     public static readonly StyledProperty<double> GridLineThicknessProperty =
         AvaloniaProperty.Register<ViewportGrid, double>(nameof(GridLineThickness), 1);
+
+    public static readonly StyledProperty<double> BottomOverlayInsetProperty =
+        AvaloniaProperty.Register<ViewportGrid, double>(nameof(BottomOverlayInset), 0);
 
     public static readonly StyledProperty<IBrush?> FrozenColumnBrushProperty =
         AvaloniaProperty.Register<ViewportGrid, IBrush?>(nameof(FrozenColumnBrush));
@@ -82,11 +88,18 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
     private int _selectionStartColumn = -1;
     private int _selectionEndRow = -1;
     private int _selectionEndColumn = -1;
+    private readonly DispatcherTimer _selectionAutoScrollTimer;
+    private Point _lastSelectionPointerPoint;
 
     public ViewportGrid()
     {
         ClipToBounds = true;
         Focusable = true;
+        _selectionAutoScrollTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(40)
+        };
+        _selectionAutoScrollTimer.Tick += OnSelectionAutoScrollTick;
         _controller.ViewportChanged += OnViewportChanged;
     }
 
@@ -120,6 +133,12 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
         set => SetValue(TotalRowCountProperty, value);
     }
 
+    public int TrailingBlankRowCount
+    {
+        get => GetValue(TrailingBlankRowCountProperty);
+        set => SetValue(TrailingBlankRowCountProperty, value);
+    }
+
     public IBrush? GridLineBrush
     {
         get => GetValue(GridLineBrushProperty);
@@ -136,6 +155,12 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
     {
         get => GetValue(FrozenColumnBrushProperty);
         set => SetValue(FrozenColumnBrushProperty, value);
+    }
+
+    public double BottomOverlayInset
+    {
+        get => GetValue(BottomOverlayInsetProperty);
+        set => SetValue(BottomOverlayInsetProperty, value);
     }
 
     public IBrush? SelectionBrush
@@ -254,6 +279,7 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
     {
         base.OnDetachedFromVisualTree(e);
         DetachRootHandlers();
+        StopSelectionAutoScroll();
         _fetchCts?.Cancel();
         _fetchCts?.Dispose();
         _fetchCts = null;
@@ -325,6 +351,13 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
         }
 
         Offset = new Vector(_offset.X + deltaX, _offset.Y + deltaY);
+        if (_isSelecting)
+        {
+            _lastSelectionPointerPoint = e.GetCurrentPoint(this).Position;
+            UpdateSelectionFromPointer(_lastSelectionPointerPoint);
+            UpdateSelectionAutoScroll();
+        }
+
         e.Handled = true;
     }
 
@@ -407,6 +440,8 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
         _selectionEndRow = row;
         _selectionEndColumn = column;
         _isSelecting = true;
+        _lastSelectionPointerPoint = localPoint;
+        StopSelectionAutoScroll();
         Focus();
         InvalidateVisual();
         RaiseSelectionChanged(row, column);
@@ -428,28 +463,13 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
 
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
         {
+            StopSelectionAutoScroll();
             return;
         }
 
-        if (!TryGetLocalPoint(e, out var localPoint))
-        {
-            return;
-        }
-
-        if (!TryGetCellFromPoint(localPoint, out int row, out int column))
-        {
-            return;
-        }
-
-        if (row == _selectionEndRow && column == _selectionEndColumn)
-        {
-            return;
-        }
-
-        _selectionEndRow = row;
-        _selectionEndColumn = column;
-        InvalidateVisual();
-        RaiseSelectionChanged(row, column);
+        _lastSelectionPointerPoint = e.GetCurrentPoint(this).Position;
+        UpdateSelectionFromPointer(_lastSelectionPointerPoint);
+        UpdateSelectionAutoScroll();
         e.Handled = true;
     }
 
@@ -468,6 +488,7 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
         if (e.InitialPressMouseButton == MouseButton.Left)
         {
             _isSelecting = false;
+            StopSelectionAutoScroll();
             if (e.Pointer.Captured == this)
             {
                 e.Pointer.Capture(null);
@@ -489,6 +510,7 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
         }
 
         _isSelecting = false;
+        StopSelectionAutoScroll();
     }
 
     private bool ShouldHandlePointerEvent()
@@ -566,8 +588,17 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
         {
             UpdateMetrics();
         }
+        else if (change.Property == TrailingBlankRowCountProperty)
+        {
+            UpdateMetrics();
+        }
+        else if (change.Property == BottomOverlayInsetProperty)
+        {
+            UpdateMetrics();
+        }
         else if (change.Property == TotalRowCountProperty)
         {
+            _cache?.Invalidate();
             UpdateMetrics();
         }
         else if (change.Property == FrozenColumnBrushProperty)
@@ -777,12 +808,13 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
 
     private int ResolveTotalRowCount()
     {
+        int blankRows = Math.Max(0, TrailingBlankRowCount);
         if (TotalRowCount >= 0)
         {
-            return TotalRowCount;
+            return TotalRowCount + blankRows;
         }
 
-        return DataProvider?.TotalRowCount ?? 0;
+        return (DataProvider?.TotalRowCount ?? 0) + blankRows;
     }
 
     private void UpdateOrderedColumns()
@@ -825,7 +857,8 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
         _controller.SetFrozenColumnCount(Math.Clamp(FrozenColumnCount, 0, columns.Count));
         _controller.SetRowHeight(RowHeight);
         _controller.SetTotalRowCount(ResolveTotalRowCount());
-        _controller.Resize(Bounds.Width, Bounds.Height);
+        _controller.SetTrailingVerticalPadding(GetTrailingVerticalPadding(Bounds.Size));
+        _controller.Resize(Bounds.Width, GetControllerViewportHeight(Bounds.Size));
         var state = _controller.CurrentState;
         UpdateScrollMetrics(state);
         QueueFetchBlocks(state);
@@ -834,7 +867,8 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
 
     private void UpdateViewportSize(Size size)
     {
-        _controller.Resize(size.Width, size.Height);
+        _controller.SetTrailingVerticalPadding(GetTrailingVerticalPadding(size));
+        _controller.Resize(size.Width, GetControllerViewportHeight(size));
     }
 
     private void SetOffset(Vector value)
@@ -907,13 +941,55 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
         double scrollableWidth = GetScrollableWidth(columns, frozenCount);
         double viewportWidth = Math.Max(0, state.ViewportWidth - frozenWidth);
         double viewportHeight = Math.Max(0, state.ViewportHeight);
+        double trailingPadding = GetTrailingVerticalPadding(new Size(state.ViewportWidth, state.ViewportHeight));
 
-        _extent = new Size(scrollableWidth, totalRows * rowHeight);
+        _extent = new Size(scrollableWidth, totalRows * rowHeight + trailingPadding);
         _viewport = new Size(viewportWidth, viewportHeight);
         _scrollSize = new Size(GetHorizontalScrollStepWidth(), rowHeight);
         _pageScrollSize = new Size(Math.Max(1, viewportWidth), Math.Max(1, viewportHeight));
 
         NotifyScrollInvalidated();
+    }
+
+    private double GetControllerViewportHeight(Size size)
+    {
+        return Math.Max(0, size.Height);
+    }
+
+    private double GetTrailingVerticalPadding(Size size)
+    {
+        double overlayInset = GetActiveBottomOverlayInset(size.Width);
+        if (overlayInset <= 0)
+        {
+            return 0;
+        }
+
+        double rowHeight = Math.Max(1, RowHeight);
+        double desiredRemainder = PositiveModulo(size.Height, rowHeight);
+        double paddingRemainder = PositiveModulo(overlayInset, rowHeight);
+        double adjustment = desiredRemainder - paddingRemainder;
+        if (adjustment < 0)
+        {
+            adjustment += rowHeight;
+        }
+
+        return overlayInset + adjustment;
+    }
+
+    private double GetActiveBottomOverlayInset(double width)
+    {
+        double inset = Math.Max(0, BottomOverlayInset);
+        if (inset <= 0)
+        {
+            return 0;
+        }
+
+        var columns = _orderedColumns;
+        int frozenCount = Math.Clamp(FrozenColumnCount, 0, columns.Count);
+        double frozenWidth = GetFrozenWidth(columns, frozenCount);
+        double scrollableWidth = GetScrollableWidth(columns, frozenCount);
+        double scrollViewportWidth = Math.Max(0, width - frozenWidth);
+        return scrollableWidth > scrollViewportWidth + 0.5 ? inset : 0;
     }
 
     private void SyncOffsetFromController(ViewportState state)
@@ -1017,6 +1093,136 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
         RaiseScrollInvalidated(EventArgs.Empty);
     }
 
+    private void OnSelectionAutoScrollTick(object? sender, EventArgs e)
+    {
+        if (!_isSelecting)
+        {
+            StopSelectionAutoScroll();
+            return;
+        }
+
+        var delta = GetSelectionAutoScrollDelta(_lastSelectionPointerPoint);
+        if (Math.Abs(delta.X) < 0.01 && Math.Abs(delta.Y) < 0.01)
+        {
+            StopSelectionAutoScroll();
+            return;
+        }
+
+        var previousOffset = _offset;
+        Offset = new Vector(_offset.X + delta.X, _offset.Y + delta.Y);
+        UpdateSelectionFromPointer(_lastSelectionPointerPoint);
+
+        if (_offset == previousOffset)
+        {
+            StopSelectionAutoScroll();
+        }
+    }
+
+    private void UpdateSelectionAutoScroll()
+    {
+        if (!_isSelecting)
+        {
+            StopSelectionAutoScroll();
+            return;
+        }
+
+        var delta = GetSelectionAutoScrollDelta(_lastSelectionPointerPoint);
+        if (Math.Abs(delta.X) < 0.01 && Math.Abs(delta.Y) < 0.01)
+        {
+            StopSelectionAutoScroll();
+            return;
+        }
+
+        if (!_selectionAutoScrollTimer.IsEnabled)
+        {
+            _selectionAutoScrollTimer.Start();
+        }
+    }
+
+    private void StopSelectionAutoScroll()
+    {
+        if (_selectionAutoScrollTimer.IsEnabled)
+        {
+            _selectionAutoScrollTimer.Stop();
+        }
+    }
+
+    private Vector GetSelectionAutoScrollDelta(Point point)
+    {
+        if (Bounds.Width <= 0 || Bounds.Height <= 0)
+        {
+            return default;
+        }
+
+        double deltaX = 0;
+        if (point.X < 0)
+        {
+            deltaX = -GetHorizontalScrollStepWidth();
+        }
+        else if (point.X > Bounds.Width)
+        {
+            deltaX = GetHorizontalScrollStepWidth();
+        }
+
+        double deltaY = 0;
+        if (point.Y < 0)
+        {
+            deltaY = -Math.Max(1, RowHeight);
+        }
+        else if (point.Y > Bounds.Height)
+        {
+            deltaY = Math.Max(1, RowHeight);
+        }
+
+        return new Vector(deltaX, deltaY);
+    }
+
+    private bool UpdateSelectionFromPointer(Point point)
+    {
+        if (!TryGetSelectionCellFromPointer(point, out int row, out int column))
+        {
+            return false;
+        }
+
+        return UpdateSelection(row, column);
+    }
+
+    private bool TryGetSelectionCellFromPointer(Point point, out int rowIndex, out int columnIndex)
+    {
+        rowIndex = -1;
+        columnIndex = -1;
+
+        if (Bounds.Width <= 0 || Bounds.Height <= 0)
+        {
+            return false;
+        }
+
+        return TryGetCellFromPoint(ClampPointToBounds(point), out rowIndex, out columnIndex);
+    }
+
+    private Point ClampPointToBounds(Point point)
+    {
+        double maxX = Math.Max(0, Bounds.Width - 1);
+        double maxY = Math.Max(0, Bounds.Height - 1);
+        double x = Math.Clamp(point.X, 0, maxX);
+        double y = Math.Clamp(point.Y, 0, maxY);
+        return new Point(x, y);
+    }
+
+    private bool UpdateSelection(int row, int column)
+    {
+        if (row == _selectionEndRow && column == _selectionEndColumn)
+        {
+            return false;
+        }
+
+        _selectionEndRow = row;
+        _selectionEndColumn = column;
+        InvalidateVisual();
+        RaiseSelectionChanged(row, column);
+        return true;
+    }
+
     private bool TryGetCellFromPoint(Point point, out int rowIndex, out int columnIndex)
     {
         rowIndex = -1;
@@ -1110,6 +1316,7 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
         _selectionEndRow = -1;
         _selectionEndColumn = -1;
         _isSelecting = false;
+        StopSelectionAutoScroll();
         InvalidateVisual();
     }
 
@@ -1266,6 +1473,17 @@ public sealed class ViewportGrid : Control, ILogicalScrollable, ICustomHitTest
         }
 
         return width;
+    }
+
+    private static double PositiveModulo(double value, double modulus)
+    {
+        if (modulus <= 0)
+        {
+            return 0;
+        }
+
+        double remainder = value % modulus;
+        return remainder < 0 ? remainder + modulus : remainder;
     }
 
     private void RaiseSelectionChanged(int rowIndex, int columnIndex)

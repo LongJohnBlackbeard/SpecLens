@@ -162,7 +162,7 @@ internal sealed partial class EventRulesQueryEngine : IEventRulesQueryEngine
     /// </summary>
     public JdeEventRulesNode GetReportEventRulesTree(string objectName)
     {
-        return GetEventRulesLinkTree(objectName, ProductTypeRda);
+        return BuildBatchApplicationTree(GetBatchApplicationSpec(objectName));
     }
 
     /// <summary>

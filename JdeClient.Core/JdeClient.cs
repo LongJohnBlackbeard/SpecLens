@@ -1498,8 +1498,39 @@ public partial class JdeClient : IDisposable
     }
 
     /// <summary>
+    /// Retrieve structured spec metadata for a batch application/report (UBE).
+    /// </summary>
+    public async Task<JdeBatchApplicationSpec> GetBatchApplicationSpecAsync(
+        string objectName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(objectName))
+        {
+            throw new ArgumentException("Object name is required.", nameof(objectName));
+        }
+
+        _session.EnsureConnected();
+
+        return await _session.ExecuteAsync(() =>
+        {
+            try
+            {
+                var engine = _eventRulesQueryEngineFactory.Create(_session.UserHandle, _options);
+                return engine.GetBatchApplicationSpec(objectName);
+            }
+            catch (Exception ex) when (ex is not JdeException)
+            {
+                throw new JdeApiException(
+                    "GetBatchApplicationSpecAsync",
+                    $"Failed to load batch application spec for {objectName}",
+                    ex);
+            }
+        }, cancellationToken);
+    }
+
+    /// <summary>
      /// Build the event rules tree for the supplied object.
-     /// </summary>
+      /// </summary>
     public async Task<JdeEventRulesNode> GetEventRulesTreeAsync(
         JdeObjectInfo jdeObject,
         CancellationToken cancellationToken = default)

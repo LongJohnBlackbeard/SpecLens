@@ -12,6 +12,7 @@ public sealed class ViewportController : IViewportController
     private double _rowHeight = 24;
     private int _totalRowCount;
     private int _frozenColumnCount;
+    private double _trailingVerticalPadding;
     private double _horizontalOffset;
     private double _verticalOffset;
     private double _viewportWidth;
@@ -72,6 +73,13 @@ public sealed class ViewportController : IViewportController
         UpdateState();
     }
 
+    public void SetTrailingVerticalPadding(double padding)
+    {
+        _trailingVerticalPadding = Math.Max(0, padding);
+        ClampOffsets();
+        UpdateState();
+    }
+
     public void ScrollTo(int row, int column)
     {
         _verticalOffset = Math.Max(0, row) * _rowHeight;
@@ -98,7 +106,7 @@ public sealed class ViewportController : IViewportController
 
     private void ClampOffsets()
     {
-        double maxVerticalOffset = Math.Max(0, _totalRowCount * _rowHeight - _viewportHeight);
+        double maxVerticalOffset = Math.Max(0, _totalRowCount * _rowHeight + _trailingVerticalPadding - _viewportHeight);
         _verticalOffset = Math.Clamp(_verticalOffset, 0, maxVerticalOffset);
 
         double maxHorizontalOffset = Math.Max(0, GetScrollableWidth() - GetScrollableViewportWidth());

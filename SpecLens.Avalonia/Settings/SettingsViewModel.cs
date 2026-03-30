@@ -32,11 +32,16 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
     private Color _eventRulesEqualsColor;
     private Color _eventRulesDefaultTextColor;
     private Color _eventRulesEditorBackgroundColor;
+    private string _eventRulesFontFamily = AppSettingsService.DefaultEventRulesFontFamily;
     private bool _enableCCodeSyntaxHighlighting;
 
     public SettingsViewModel(IAppSettingsService settingsService)
     {
         _settingsService = settingsService;
+        var installedFontFamilies = AppSettingsService.GetInstalledFontFamilyNames();
+        EventRulesFontFamilies = installedFontFamilies.Count > 0
+            ? installedFontFamilies
+            : new[] { AppSettingsService.NormalizeEventRulesFontFamily(null, Array.Empty<string>()) };
         ThemeMode = settingsService.Current.ThemeMode;
         IsLoggingEnabled = settingsService.Current.IsLoggingEnabled;
         LoggingPath = settingsService.Current.LoggingPath;
@@ -45,6 +50,9 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
         ColumnHeaderDisplayMode = settingsService.Current.ColumnHeaderDisplayMode;
         ShowTablePrefixInHeader = settingsService.Current.ShowTablePrefixInHeader;
         QueryColumnWidth = settingsService.Current.QueryColumnWidth;
+        EventRulesFontFamily = AppSettingsService.NormalizeEventRulesFontFamily(
+            settingsService.Current.EventRulesFontFamily,
+            EventRulesFontFamilies);
         EventRulesCommentColor = EventRulesSyntaxTheme.ParseColor(
             settingsService.Current.EventRulesCommentColor,
             EventRulesSyntaxTheme.DefaultCommentColor);
@@ -131,6 +139,12 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
     {
         get => _themeMode;
         set => this.RaiseAndSetIfChanged(ref _themeMode, value);
+    }
+
+    public string EventRulesFontFamily
+    {
+        get => _eventRulesFontFamily;
+        set => this.RaiseAndSetIfChanged(ref _eventRulesFontFamily, value);
     }
 
     public bool IsLoggingEnabled
@@ -223,6 +237,8 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
     public IReadOnlyList<AppThemeMode> ThemeModeOptions { get; } =
         new[] { AppThemeMode.Light, AppThemeMode.Dark };
 
+    public IReadOnlyList<string> EventRulesFontFamilies { get; }
+
     public bool IsHeaderDisplayModeDatabase => ColumnHeaderDisplayMode == ColumnHeaderDisplayMode.DatabaseColumnName;
     public bool IsHeaderDisplayModeDictionary => ColumnHeaderDisplayMode == ColumnHeaderDisplayMode.DataDictionary;
     public bool IsHeaderDisplayModeDatabaseWithDescription => ColumnHeaderDisplayMode == ColumnHeaderDisplayMode.DatabaseColumnNameWithDescription;
@@ -283,6 +299,14 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
         if (!string.Equals(ClientLoggingPath, clientLoggingPath, StringComparison.OrdinalIgnoreCase))
         {
             ClientLoggingPath = clientLoggingPath;
+        }
+
+        string eventRulesFontFamily = AppSettingsService.NormalizeEventRulesFontFamily(
+            _settingsService.Current.EventRulesFontFamily,
+            EventRulesFontFamilies);
+        if (!string.Equals(EventRulesFontFamily, eventRulesFontFamily, StringComparison.OrdinalIgnoreCase))
+        {
+            EventRulesFontFamily = eventRulesFontFamily;
         }
 
         var commentColor = EventRulesSyntaxTheme.ParseColor(
@@ -400,6 +424,9 @@ public sealed class SettingsViewModel : ViewModelBase, IActivatableViewModel
             settings.ColumnHeaderDisplayMode = ColumnHeaderDisplayMode;
             settings.ShowTablePrefixInHeader = ShowTablePrefixInHeader;
             settings.QueryColumnWidth = QueryColumnWidth;
+            settings.EventRulesFontFamily = AppSettingsService.NormalizeEventRulesFontFamily(
+                EventRulesFontFamily,
+                EventRulesFontFamilies);
             settings.EventRulesCommentColor = EventRulesSyntaxTheme.ToHex(EventRulesCommentColor);
             settings.EventRulesLinkColor = EventRulesSyntaxTheme.ToHex(EventRulesLinkColor);
             settings.EventRulesPipeColor = EventRulesSyntaxTheme.ToHex(EventRulesPipeColor);
