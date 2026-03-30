@@ -2,7 +2,7 @@ name: Dependabot Auto Approve
 
 on:
   pull_request_target:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   pull-requests: write
