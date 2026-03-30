@@ -270,28 +270,26 @@ internal sealed partial class EventRulesQueryEngine
                 businessViewCache,
                 businessViewService);
 
-            var form = new JdeInteractiveFormSpec
-            {
-                ObjectName = formName,
-                Name = displayName,
-                FormType = descriptor?.FormType ?? JdeInteractiveFormType.Unknown,
-                FormTypeLabel = descriptor?.FormTypeLabel ?? "Unknown",
-                BusinessViewName = descriptor?.BusinessViewName,
-                BusinessView = businessView,
-                UpdateOnFormBusinessView = descriptor?.UpdateOnFormBusinessView,
-                FetchOnFormBusinessView = descriptor?.FetchOnFormBusinessView,
-                UpdateOnGridBusinessView = descriptor?.UpdateOnGridBusinessView,
-                FetchOnGridBusinessView = descriptor?.FetchOnGridBusinessView,
-                TransactionType = descriptor?.TransactionType,
-                ControlCount = components.Count,
-                DataStructureName = formDataStructureName,
-                DataStructure = dataStructure,
-                Events = events,
-                Components = components,
-                Attributes = descriptor == null
-                    ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                    : ToAttributeDictionary(descriptor.Attributes)
-            };
+            var form = CreateInteractiveFormSpec(descriptor?.FormType ?? JdeInteractiveFormType.Unknown);
+            form.ObjectName = formName;
+            form.Name = displayName;
+            form.FormType = descriptor?.FormType ?? JdeInteractiveFormType.Unknown;
+            form.FormTypeLabel = descriptor?.FormTypeLabel ?? "Unknown";
+            form.BusinessViewName = descriptor?.BusinessViewName;
+            form.BusinessView = businessView;
+            form.UpdateOnFormBusinessView = descriptor?.UpdateOnFormBusinessView;
+            form.FetchOnFormBusinessView = descriptor?.FetchOnFormBusinessView;
+            form.UpdateOnGridBusinessView = descriptor?.UpdateOnGridBusinessView;
+            form.FetchOnGridBusinessView = descriptor?.FetchOnGridBusinessView;
+            form.TransactionType = descriptor?.TransactionType;
+            form.ControlCount = components.Count;
+            form.DataStructureName = formDataStructureName;
+            form.DataStructure = dataStructure;
+            form.Events = events;
+            form.Components = components;
+            form.Attributes = descriptor == null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : ToAttributeDictionary(descriptor.Attributes);
 
             form.MetadataSections = BuildInteractiveFormMetadataSections(form, descriptor);
             forms.Add(form);
@@ -368,25 +366,23 @@ internal sealed partial class EventRulesQueryEngine
                 name,
                 dataStructureName);
 
-            var component = new JdeInteractiveComponentSpec
-            {
-                ControlId = controlId,
-                ObjectId = TryGetIntAttribute(descriptor?.Attributes, "ObjectId"),
-                Name = name,
-                ComponentType = componentType,
-                ComponentTypeLabel = componentTypeLabel,
-                ParentControlId = descriptor?.ParentControlId,
-                DisplayOrder = descriptor?.DisplayOrder,
-                DataStructureName = dataStructureName,
-                BusinessViewName = businessViewName,
-                DataItem = dataItem,
-                TableName = tableName,
-                IsVisible = isVisible,
-                Events = events,
-                Attributes = descriptor == null
-                    ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                    : ToAttributeDictionary(descriptor.Attributes)
-            };
+            var component = CreateInteractiveComponentSpec(componentType, descriptor?.ComponentTypeName);
+            component.ControlId = controlId;
+            component.ObjectId = TryGetIntAttribute(descriptor?.Attributes, "ObjectId");
+            component.Name = name;
+            component.ComponentType = componentType;
+            component.ComponentTypeLabel = componentTypeLabel;
+            component.ParentControlId = descriptor?.ParentControlId;
+            component.DisplayOrder = descriptor?.DisplayOrder;
+            component.DataStructureName = dataStructureName;
+            component.BusinessViewName = businessViewName;
+            component.DataItem = dataItem;
+            component.TableName = tableName;
+            component.IsVisible = isVisible;
+            component.Events = events;
+            component.Attributes = descriptor == null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : ToAttributeDictionary(descriptor.Attributes);
 
             component.MetadataSections = BuildInteractiveComponentMetadataSections(component, descriptor, businessView);
             componentsById[controlId] = component;
@@ -1283,6 +1279,43 @@ internal sealed partial class EventRulesQueryEngine
             "List Box" => JdeInteractiveComponentType.ListBox,
             "Control" => JdeInteractiveComponentType.Control,
             _ => JdeInteractiveComponentType.Unknown
+        };
+    }
+
+    private static JdeInteractiveFormSpec CreateInteractiveFormSpec(JdeInteractiveFormType formType)
+    {
+        return formType switch
+        {
+            JdeInteractiveFormType.Form => new JdeInteractiveStandardFormSpec(),
+            JdeInteractiveFormType.Subform => new JdeInteractiveSubformSpec(),
+            _ => new JdeInteractiveUnknownFormSpec()
+        };
+    }
+
+    private static JdeInteractiveComponentSpec CreateInteractiveComponentSpec(
+        JdeInteractiveComponentType componentType,
+        string? componentTypeName)
+    {
+        if (string.IsNullOrWhiteSpace(componentTypeName))
+        {
+            return new JdeInteractiveControlComponentSpec();
+        }
+
+        return componentType switch
+        {
+            JdeInteractiveComponentType.Control => new JdeInteractiveControlComponentSpec(),
+            JdeInteractiveComponentType.PushButton => new JdeInteractivePushButtonComponentSpec(),
+            JdeInteractiveComponentType.Grid => new JdeInteractiveGridComponentSpec(),
+            JdeInteractiveComponentType.GridColumn => new JdeInteractiveGridColumnComponentSpec(),
+            JdeInteractiveComponentType.TextBlock => new JdeInteractiveTextBlockComponentSpec(),
+            JdeInteractiveComponentType.Function => new JdeInteractiveFunctionComponentSpec(),
+            JdeInteractiveComponentType.TabControl => new JdeInteractiveTabControlComponentSpec(),
+            JdeInteractiveComponentType.Page => new JdeInteractivePageComponentSpec(),
+            JdeInteractiveComponentType.CheckBox => new JdeInteractiveCheckBoxComponentSpec(),
+            JdeInteractiveComponentType.RadioButton => new JdeInteractiveRadioButtonComponentSpec(),
+            JdeInteractiveComponentType.ComboBox => new JdeInteractiveComboBoxComponentSpec(),
+            JdeInteractiveComponentType.ListBox => new JdeInteractiveListBoxComponentSpec(),
+            _ => new JdeInteractiveUnknownComponentSpec()
         };
     }
 

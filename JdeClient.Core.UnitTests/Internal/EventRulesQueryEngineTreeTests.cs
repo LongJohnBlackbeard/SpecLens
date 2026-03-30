@@ -36,7 +36,7 @@ public class EventRulesQueryEngineTreeTests
             },
             Forms = new[]
             {
-                new JdeInteractiveFormSpec
+                new JdeInteractiveSubformSpec
                 {
                     ObjectName = "S55OOA",
                     Name = "Routing",
@@ -75,9 +75,9 @@ public class EventRulesQueryEngineTreeTests
                             }
                         }
                     },
-                    Components = new[]
+                    Components = new JdeInteractiveComponentSpec[]
                     {
-                        new JdeInteractiveComponentSpec
+                        new JdeInteractivePushButtonComponentSpec
                         {
                             ControlId = 21,
                             Name = "Find",
@@ -95,7 +95,7 @@ public class EventRulesQueryEngineTreeTests
                                 }
                             }
                         },
-                        new JdeInteractiveComponentSpec
+                        new JdeInteractiveGridComponentSpec
                         {
                             ControlId = 20,
                             Name = "Grid",
@@ -112,9 +112,9 @@ public class EventRulesQueryEngineTreeTests
                                     }
                                 }
                             },
-                            Children = new[]
+                            Children = new JdeInteractiveComponentSpec[]
                             {
-                                new JdeInteractiveComponentSpec
+                                new JdeInteractiveGridColumnComponentSpec
                                 {
                                     ControlId = 64,
                                     ParentControlId = 20,

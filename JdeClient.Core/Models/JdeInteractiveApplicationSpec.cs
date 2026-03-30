@@ -3,36 +3,31 @@ namespace JdeClient.Core.Models;
 /// <summary>
 /// Structured interactive application (APPL) spec data.
 /// </summary>
-public sealed class JdeInteractiveApplicationSpec
+public sealed class JdeInteractiveApplicationSpec : JdeObjectSpec
 {
-    public string ObjectName { get; set; } = string.Empty;
-
-    public string Name { get; set; } = string.Empty;
-
     public string? ProcessingOptionTemplateName { get; set; }
 
     public JdeInteractiveDataStructureSpec? ProcessingOptions { get; set; }
 
     public IReadOnlyList<JdeInteractiveFormSpec> Forms { get; set; } = Array.Empty<JdeInteractiveFormSpec>();
-
-    public IReadOnlyList<JdeSpecMetadataSection> MetadataSections { get; set; } = Array.Empty<JdeSpecMetadataSection>();
-
-    public IReadOnlyDictionary<string, string> Attributes { get; set; } =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>
 /// Structured interactive application form metadata.
 /// </summary>
-public sealed class JdeInteractiveFormSpec
+public abstract class JdeInteractiveFormSpec : JdeFormSpec
 {
-    public string ObjectName { get; set; } = string.Empty;
+    protected JdeInteractiveFormSpec(
+        JdeInteractiveFormType formType,
+        string formTypeLabel)
+    {
+        FormType = formType;
+        FormTypeLabel = formTypeLabel;
+    }
 
-    public string Name { get; set; } = string.Empty;
+    public JdeInteractiveFormType FormType { get; set; }
 
-    public JdeInteractiveFormType FormType { get; set; } = JdeInteractiveFormType.Unknown;
-
-    public string FormTypeLabel { get; set; } = "Unknown";
+    public string FormTypeLabel { get; set; }
 
     public string? BusinessViewName { get; set; }
 
@@ -50,34 +45,68 @@ public sealed class JdeInteractiveFormSpec
 
     public int ControlCount { get; set; }
 
-    public string? DataStructureName { get; set; }
-
     public JdeInteractiveDataStructureSpec? DataStructure { get; set; }
 
     public IReadOnlyList<JdeInteractiveEventSpec> Events { get; set; } = Array.Empty<JdeInteractiveEventSpec>();
 
     public IReadOnlyList<JdeInteractiveComponentSpec> Components { get; set; } = Array.Empty<JdeInteractiveComponentSpec>();
+}
 
-    public IReadOnlyList<JdeSpecMetadataSection> MetadataSections { get; set; } = Array.Empty<JdeSpecMetadataSection>();
+/// <summary>
+/// Structured main form metadata.
+/// </summary>
+public sealed class JdeInteractiveStandardFormSpec : JdeInteractiveFormSpec
+{
+    public JdeInteractiveStandardFormSpec()
+        : base(JdeInteractiveFormType.Form, "Form")
+    {
+    }
+}
 
-    public IReadOnlyDictionary<string, string> Attributes { get; set; } =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+/// <summary>
+/// Structured subform metadata.
+/// </summary>
+public sealed class JdeInteractiveSubformSpec : JdeInteractiveFormSpec
+{
+    public JdeInteractiveSubformSpec()
+        : base(JdeInteractiveFormType.Subform, "Subform")
+    {
+    }
+}
+
+/// <summary>
+/// Structured fallback form metadata when the type cannot be resolved.
+/// </summary>
+public sealed class JdeInteractiveUnknownFormSpec : JdeInteractiveFormSpec
+{
+    public JdeInteractiveUnknownFormSpec()
+        : base(JdeInteractiveFormType.Unknown, "Unknown")
+    {
+    }
 }
 
 /// <summary>
 /// Structured interactive application component metadata.
 /// </summary>
-public sealed class JdeInteractiveComponentSpec
+public abstract class JdeInteractiveComponentSpec
 {
+    protected JdeInteractiveComponentSpec(
+        JdeInteractiveComponentType componentType,
+        string componentTypeLabel)
+    {
+        ComponentType = componentType;
+        ComponentTypeLabel = componentTypeLabel;
+    }
+
     public int ControlId { get; set; }
 
     public int? ObjectId { get; set; }
 
     public string Name { get; set; } = string.Empty;
 
-    public JdeInteractiveComponentType ComponentType { get; set; } = JdeInteractiveComponentType.Unknown;
+    public JdeInteractiveComponentType ComponentType { get; set; }
 
-    public string ComponentTypeLabel { get; set; } = "Unknown";
+    public string ComponentTypeLabel { get; set; }
 
     public int? ParentControlId { get; set; }
 
@@ -104,21 +133,153 @@ public sealed class JdeInteractiveComponentSpec
 }
 
 /// <summary>
+/// Structured fallback control metadata when the type cannot be resolved.
+/// </summary>
+public sealed class JdeInteractiveUnknownComponentSpec : JdeInteractiveComponentSpec
+{
+    public JdeInteractiveUnknownComponentSpec()
+        : base(JdeInteractiveComponentType.Unknown, "Unknown")
+    {
+    }
+}
+
+/// <summary>
+/// Structured generic control metadata.
+/// </summary>
+public sealed class JdeInteractiveControlComponentSpec : JdeInteractiveComponentSpec
+{
+    public JdeInteractiveControlComponentSpec()
+        : base(JdeInteractiveComponentType.Control, "Control")
+    {
+    }
+}
+
+/// <summary>
+/// Structured push button metadata.
+/// </summary>
+public sealed class JdeInteractivePushButtonComponentSpec : JdeInteractiveComponentSpec
+{
+    public JdeInteractivePushButtonComponentSpec()
+        : base(JdeInteractiveComponentType.PushButton, "Push Button")
+    {
+    }
+}
+
+/// <summary>
+/// Structured grid metadata.
+/// </summary>
+public sealed class JdeInteractiveGridComponentSpec : JdeInteractiveComponentSpec
+{
+    public JdeInteractiveGridComponentSpec()
+        : base(JdeInteractiveComponentType.Grid, "Grid")
+    {
+    }
+}
+
+/// <summary>
+/// Structured grid column metadata.
+/// </summary>
+public sealed class JdeInteractiveGridColumnComponentSpec : JdeInteractiveComponentSpec
+{
+    public JdeInteractiveGridColumnComponentSpec()
+        : base(JdeInteractiveComponentType.GridColumn, "Grid Column")
+    {
+    }
+}
+
+/// <summary>
+/// Structured text block metadata.
+/// </summary>
+public sealed class JdeInteractiveTextBlockComponentSpec : JdeInteractiveComponentSpec
+{
+    public JdeInteractiveTextBlockComponentSpec()
+        : base(JdeInteractiveComponentType.TextBlock, "Text Block")
+    {
+    }
+}
+
+/// <summary>
+/// Structured function control metadata.
+/// </summary>
+public sealed class JdeInteractiveFunctionComponentSpec : JdeInteractiveComponentSpec
+{
+    public JdeInteractiveFunctionComponentSpec()
+        : base(JdeInteractiveComponentType.Function, "Function")
+    {
+    }
+}
+
+/// <summary>
+/// Structured tab control metadata.
+/// </summary>
+public sealed class JdeInteractiveTabControlComponentSpec : JdeInteractiveComponentSpec
+{
+    public JdeInteractiveTabControlComponentSpec()
+        : base(JdeInteractiveComponentType.TabControl, "Tab Control")
+    {
+    }
+}
+
+/// <summary>
+/// Structured page metadata.
+/// </summary>
+public sealed class JdeInteractivePageComponentSpec : JdeInteractiveComponentSpec
+{
+    public JdeInteractivePageComponentSpec()
+        : base(JdeInteractiveComponentType.Page, "Page")
+    {
+    }
+}
+
+/// <summary>
+/// Structured checkbox metadata.
+/// </summary>
+public sealed class JdeInteractiveCheckBoxComponentSpec : JdeInteractiveComponentSpec
+{
+    public JdeInteractiveCheckBoxComponentSpec()
+        : base(JdeInteractiveComponentType.CheckBox, "Check Box")
+    {
+    }
+}
+
+/// <summary>
+/// Structured radio button metadata.
+/// </summary>
+public sealed class JdeInteractiveRadioButtonComponentSpec : JdeInteractiveComponentSpec
+{
+    public JdeInteractiveRadioButtonComponentSpec()
+        : base(JdeInteractiveComponentType.RadioButton, "Radio Button")
+    {
+    }
+}
+
+/// <summary>
+/// Structured combo box metadata.
+/// </summary>
+public sealed class JdeInteractiveComboBoxComponentSpec : JdeInteractiveComponentSpec
+{
+    public JdeInteractiveComboBoxComponentSpec()
+        : base(JdeInteractiveComponentType.ComboBox, "Combo Box")
+    {
+    }
+}
+
+/// <summary>
+/// Structured list box metadata.
+/// </summary>
+public sealed class JdeInteractiveListBoxComponentSpec : JdeInteractiveComponentSpec
+{
+    public JdeInteractiveListBoxComponentSpec()
+        : base(JdeInteractiveComponentType.ListBox, "List Box")
+    {
+    }
+}
+
+/// <summary>
 /// Structured APPL event metadata.
 /// </summary>
-public sealed class JdeInteractiveEventSpec
+public sealed class JdeInteractiveEventSpec : JdeEventSpec
 {
-    public string Name { get; set; } = string.Empty;
-
-    public string EventSpecKey { get; set; } = string.Empty;
-
-    public string? EventId { get; set; }
-
-    public int? EventId3 { get; set; }
-
-    public string? TemplateName { get; set; }
-
-    public IReadOnlyList<JdeSpecMetadataSection> MetadataSections { get; set; } = Array.Empty<JdeSpecMetadataSection>();
 }
 
 /// <summary>

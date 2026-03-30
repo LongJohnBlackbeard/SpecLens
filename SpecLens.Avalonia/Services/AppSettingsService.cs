@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Diagnostics;
+using System.Linq;
 using System.Text.Json;
 using Avalonia.Controls;
+using Avalonia.Media;
 using JdeClient.Core.Models;
 using SpecLens.Avalonia.Models;
 
@@ -38,6 +41,7 @@ public sealed class AppSettings
     public string EventRulesEditorBackgroundColor { get; set; } = EventRulesSyntaxTheme.DefaultEditorBackgroundColor;
     public string EventRulesStringColor { get; set; } = EventRulesSyntaxTheme.DefaultStringColor;
     public bool EnableCCodeSyntaxHighlighting { get; set; } = true;
+    public string EventRulesFontFamily { get; set; } = AppSettingsService.DefaultEventRulesFontFamily;
 }
 
 public interface IAppSettingsService
@@ -50,6 +54,7 @@ public interface IAppSettingsService
 
 public sealed class AppSettingsService : IAppSettingsService
 {
+    private static readonly StringComparer FontFamilyComparer = StringComparer.OrdinalIgnoreCase;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true
@@ -71,6 +76,8 @@ public sealed class AppSettingsService : IAppSettingsService
     public AppSettings Current { get; }
     public event EventHandler? SettingsChanged;
 
+    public const string DefaultEventRulesFontFamily = "Consolas";
+
     public static string DefaultLoggingPath =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -86,6 +93,45 @@ public sealed class AppSettingsService : IAppSettingsService
             "Logs",
             "JdeClient",
             "jde-client-.log");
+
+    public static IReadOnlyList<string> GetInstalledFontFamilyNames()
+    {
+        return FontManager.Current.SystemFonts
+            .Select(font => font.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(FontFamilyComparer)
+            .OrderBy(name => name, FontFamilyComparer)
+            .ToArray();
+    }
+
+    public static string NormalizeEventRulesFontFamily(string? fontFamily)
+    {
+        return NormalizeEventRulesFontFamily(fontFamily, GetInstalledFontFamilyNames());
+    }
+
+    public static string NormalizeEventRulesFontFamily(string? fontFamily, IReadOnlyList<string> installedFontFamilies)
+    {
+        if (!string.IsNullOrWhiteSpace(fontFamily))
+        {
+            string? matchingFont = installedFontFamilies.FirstOrDefault(name =>
+                string.Equals(name, fontFamily, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(matchingFont))
+            {
+                return matchingFont;
+            }
+        }
+
+        string? preferredDefault = installedFontFamilies.FirstOrDefault(name =>
+            string.Equals(name, DefaultEventRulesFontFamily, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(preferredDefault))
+        {
+            return preferredDefault;
+        }
+
+        return installedFontFamilies.FirstOrDefault()
+               ?? FontFamily.Default.Name
+               ?? DefaultEventRulesFontFamily;
+    }
 
     public void Update(Action<AppSettings> update)
     {
@@ -137,5 +183,7 @@ public sealed class AppSettingsService : IAppSettingsService
         {
             settings.ClientLoggingPath = DefaultClientLoggingPath;
         }
+
+        settings.EventRulesFontFamily = NormalizeEventRulesFontFamily(settings.EventRulesFontFamily);
     }
 }

@@ -9,6 +9,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
@@ -58,6 +59,7 @@ public partial class EventRulesTabView : ReactiveUserControl<EventRulesTabViewMo
         _foldingManager = FoldingManager.Install(EventRulesEditor.TextArea);
         UpdateCodeEditorLayoutHeights();
         ApplySyntaxTheme();
+        ApplyEditorFontFamily(_settingsService?.Current.EventRulesFontFamily);
         EventRulesSyntaxTheme.ThemeChanged += OnSyntaxThemeChanged;
         DetachedFromVisualTree += OnDetachedFromVisualTree;
         if (_settingsService != null)
@@ -476,6 +478,7 @@ public partial class EventRulesTabView : ReactiveUserControl<EventRulesTabViewMo
             return;
         }
 
+        ApplyEditorFontFamily(_settingsService.Current.EventRulesFontFamily);
         ApplyCCodeHighlightingSetting(_settingsService.Current.EnableCCodeSyntaxHighlighting);
     }
 
@@ -591,6 +594,20 @@ public partial class EventRulesTabView : ReactiveUserControl<EventRulesTabViewMo
         HeaderCodeEditor.Foreground = EventRulesSyntaxTheme.DefaultTextBrush;
         SourceCodeEditor.Background = EventRulesSyntaxTheme.EditorBackgroundBrush;
         SourceCodeEditor.Foreground = EventRulesSyntaxTheme.DefaultTextBrush;
+    }
+
+    private void ApplyEditorFontFamily(string? fontFamilyName)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => ApplyEditorFontFamily(fontFamilyName));
+            return;
+        }
+
+        var fontFamily = new FontFamily(AppSettingsService.NormalizeEventRulesFontFamily(fontFamilyName));
+        EventRulesEditor.FontFamily = fontFamily;
+        HeaderCodeEditor.FontFamily = fontFamily;
+        SourceCodeEditor.FontFamily = fontFamily;
     }
 
     private void ForceRecolorize(TextView textView)
