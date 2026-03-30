@@ -1,0 +1,16 @@
+name: Dependabot Auto Approve
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  approve:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: hmarr/auto-approve-action@v3
