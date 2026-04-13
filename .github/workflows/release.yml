@@ -125,7 +125,7 @@ jobs:
           "PRERELEASE=$isPre" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: ${{ github.ref_name }}
           prerelease: ${{ env.PRERELEASE == 'True' }}
